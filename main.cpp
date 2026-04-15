@@ -380,7 +380,6 @@ vector<int> calchistCustom(Mat_<uchar> img, int nr_bins)
     return hist;
 }
 
-
 void showHistogram(const string& name, int* hist, const int hist_cols, const int hist_height) {
     Mat imgHist(hist_height, hist_cols, CV_8UC3, CV_RGB(255, 255, 255));
     // constructs a white image
@@ -400,6 +399,7 @@ void showHistogram(const string& name, int* hist, const int hist_cols, const int
     }
     imshow(name, imgHist);
 }
+
 vector<float> pdf(Mat_<uchar> img, int nr_bins = 256)
 {
     vector<int> hist = calchist(img, nr_bins);
@@ -411,6 +411,7 @@ vector<float> pdf(Mat_<uchar> img, int nr_bins = 256)
     }
     return normalized_histogram;
 }
+
 void showPDF(const string& name, float* hist, const int hist_cols, const int hist_height) {
     Mat imgHist(hist_height, hist_cols, CV_8UC3, CV_RGB(255, 255, 255));
     float max_hist = 0;
@@ -1369,6 +1370,165 @@ void lab6() {
     while (op!=0);
 }
 
+Mat_<uchar> dilation(Mat_<uchar> src, Mat_<uchar> strel) {
+    Mat_<uchar> dst(src.size());
+    dst.setTo(255);
+    for (int i=0; i<src.rows; i++) {
+        for (int j=0; j<src.cols; j++) {
+            if (src(i,j)!=0) {
+                continue;
+            }
+            for (int u=0; u<strel.rows; u++) {
+                for (int v=0; v<strel.cols; v++) {
+                    if (strel(u,v)==0) {
+                        int i2 = i+u-strel.rows/2;
+                        int j2 = j+v-strel.cols/2;
+                        if (isInside(src, i2, j2)) {
+                            dst(i2,j2)=0;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return dst;
+}
+Mat_<uchar> erotion(Mat_<uchar> src, Mat_<uchar> strel) {
+    Mat_<uchar> dst(src.size());
+    dst.setTo(255);
+    for (int i=0; i<src.rows; i++) {
+        for (int j=0; j<src.cols; j++) {
+            bool coveredByStructuringElement = true;
+            for (int u =0; u<strel.rows; u++) {
+                for (int v=0; v<strel.cols; v++) {
+                    if (strel(u,v)==0) {
+                        int i2 = i+u-strel.rows/2;
+                        int j2 = j+v-strel.cols/2;
+                        if (!isInside(src, i2, j2) || src(i2,j2)!=0) {
+                            coveredByStructuringElement=false;
+                            break;
+                        }
+                    }
+                }
+                if (!coveredByStructuringElement) {
+                    break;
+                }
+            }
+            if (coveredByStructuringElement) {
+                dst(i,j)=0;
+            }
+        }
+    }
+    return dst;
+}
+
+vector<pair<string, Mat_<uchar>>> getHardcodedStrels() {
+    vector<pair<string, Mat_<uchar>>> strels;
+
+    Mat_<uchar> square3(3, 3);
+    square3.setTo(0);
+    strels.push_back({"Square 3x3", square3});
+
+    Mat_<uchar> cross3(3, 3);
+    cross3.setTo(255);
+    cross3(0, 1) = 0;
+    cross3(1, 0) = 0;
+    cross3(1, 1) = 0;
+    cross3(1, 2) = 0;
+    cross3(2, 1) = 0;
+    strels.push_back({"Cross 3x3", cross3});
+
+    Mat_<uchar> diamond5(5, 5);
+    diamond5.setTo(255);
+    for (int i = 0; i < 5; i++) {
+        for (int j = 0; j < 5; j++) {
+            if (abs(i - 2) + abs(j - 2) <= 2) {
+                diamond5(i, j) = 0;
+            }
+        }
+    }
+    strels.push_back({"Diamond 5x5", diamond5});
+
+    Mat_<uchar> diamond57(5, 7);
+    diamond57.setTo(255);
+    for (int i = 0; i < 5; i++) {
+        for (int j = 0; j < 7; j++) {
+            if (abs(i - 2) + abs(j - 3) <= 2) {
+                diamond57(i, j) = 0;
+            }
+        }
+    }
+    strels.push_back({"Diamond 5x7", diamond57});
+
+    Mat_<uchar> lineH(1, 7);
+    lineH.setTo(0);
+    strels.push_back({"Horizontal line 1x7", lineH});
+
+    Mat_<uchar> lineV(7, 1);
+    lineV.setTo(0);
+    strels.push_back({"Vertical line 7x1", lineV});
+
+    Mat_<uchar> rect26(2, 6);
+    rect26.setTo(0);
+    strels.push_back({"Rectangle 2x6", rect26});
+
+    return strels;
+}
+
+Mat_<uchar> buildLargeStrelPreview(const Mat_<uchar>& strel) {
+    // Display-only scaling so tiny kernels (1x7, 3x3) are visible in imshow.
+    const int targetSize = 240;
+    int maxDim = max(strel.rows, strel.cols);
+    int scale = max(1, targetSize / maxDim);
+    Mat_<uchar> preview;
+    resize(strel, preview, Size(strel.cols * scale, strel.rows * scale), 0, 0, INTER_NEAREST);
+    return preview;
+}
+
+void lab7() {
+    int op;
+    do{
+        printf("Menu:\n");
+        printf(" 1 - Dilation \n");
+        printf(" 2 - Erosion \n");
+        printf(" 0 - Exit\n\n");
+        printf("Option: ");
+        scanf("%d",&op);
+        switch (op)
+        {
+            case 1: {
+                Mat_<uchar> src=imread("PI-L5/letters.bmp", IMREAD_GRAYSCALE);
+                auto strels = getHardcodedStrels();
+                for (const auto& strelData : strels) {
+                    Mat_<uchar> dilated = dilation(src, strelData.second);
+                    Mat_<uchar> strelPreview = buildLargeStrelPreview(strelData.second);
+                    cout << "Dilation with: " << strelData.first << endl;
+                    imshow("Original", src);
+                    imshow("Strel", strelPreview);
+                    imshow("Result", dilated);
+                    waitKey(0);
+                }
+                break;
+            }
+            case 2: {
+                Mat_<uchar> srcE=imread("PI-L7/Morphological_Op_Images/2_Erode/mon1thr1_bw.bmp", IMREAD_GRAYSCALE);
+                auto strels = getHardcodedStrels();
+                for (const auto& strelData : strels) {
+                    Mat_<uchar> eroded = erotion(srcE, strelData.second);
+                    Mat_<uchar> strelPreview = buildLargeStrelPreview(strelData.second);
+                    cout << "Erosion with: " << strelData.first << endl;
+                    imshow("Original", srcE);
+                    imshow("Strel", strelPreview);
+                    imshow("Result", eroded);
+                    waitKey(0);
+                }
+                break;
+            }
+        }
+    }
+    while (op!=0);
+}
+
 void project() {
     VideoCapture cap(0, CAP_AVFOUNDATION);
     if (!cap.isOpened()) {
@@ -1386,11 +1546,10 @@ void project() {
             cout << "Received empty frame from camera. Stopping." << endl;
             break;
         }
-        // Draw a banner and message
         rectangle(frame, Point(10, 10), Point(370, 60), Scalar(0, 0, 0), FILLED);
-        putText(frame, "Lab Project - Camera is ON", Point(20, 35),
+        putText(frame, "Lab Project", Point(20, 35),
                 FONT_HERSHEY_SIMPLEX, 0.7, Scalar(0, 255, 255), 2);
-        putText(frame, "Press q or ESC to close", Point(20, 55),
+        putText(frame, "Press q or ESC to stop live", Point(20, 55),
                 FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 255), 1);
         imshow("Laptop Camera", frame);
         int key = waitKey(30);
@@ -1547,8 +1706,8 @@ int main(){
         printf(" 4 - Lab4 \n");
         printf(" 5 - Lab5 \n");
         printf(" 6 - Lab6 \n");
-        printf(" 7 - Project \n");
-        printf(" 8 - Practice (triangle draw + BFS fill) \n");
+        printf(" 7 - Lab7 \n");
+        printf(" 15 - Project \n");
         printf(" 0 - Exit\n\n");
         printf("Option: ");
         scanf("%d",&op);
@@ -1573,10 +1732,10 @@ int main(){
                 lab6();
                 break;
             case 7:
-                project();
+                lab7();
                 break;
-            case 8:
-                testPractice();
+            case 15:
+                project();
                 break;
         }
     }
