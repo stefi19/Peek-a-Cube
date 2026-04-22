@@ -1665,7 +1665,7 @@ vector<int> brightness_histogram(const vector<int>& hist) {
     return brightHist;
 }
 
-vector<int> stretch_shrink_histogram(vector<int>& hist, int g_out_min, int g_out_max) {
+vector<int> stretch_shrink_histogram(vector<int>& hist, int g_out_min, int g_out_max, Mat_<uchar> img, Mat_<uchar>*imgNew) {
     vector<int> stretchHist(hist.size(), 0);
     int g_in_min = 0, g_in_max = 255;
     for (int i = 0; i < hist.size(); i++) {
@@ -1680,18 +1680,34 @@ vector<int> stretch_shrink_histogram(vector<int>& hist, int g_out_min, int g_out
             break;
         }
     }
-    for (int i = g_in_min; i <= g_in_max; i++) {
-        int g_out = g_out_min + (i - g_in_min) * (float)(g_out_max - g_out_min) / (g_in_max - g_in_min);
-        if (g_out<0) {
-            g_out=0;
+    // for (int i = g_in_min; i <= g_in_max; i++) {
+    //     int g_out = g_out_min + (i - g_in_min) * (float)(g_out_max - g_out_min) / (g_in_max - g_in_min);
+    //     if (g_out<0) {
+    //         g_out=0;
+    //     }
+    //     if (g_out>255) {
+    //         g_out=255;
+    //     }
+    //     stretchHist[g_out] += hist[i];
+    // }
+    for (int i = 0; i < img.rows; i++) {
+        for (int j = 0; j < img.cols; j++) {
+            int g_in = img(i, j);
+            int g_out = g_out_min + (g_in - g_in_min) * (float)(g_out_max - g_out_min) / (g_in_max - g_in_min);
+            if (g_out < 0) {
+                g_out = 0;
+            }
+            if (g_out > 255) {
+                g_out = 255;
+            }
+            (*imgNew)(i, j) = g_out;
+            stretchHist[g_out]++;
         }
-        if (g_out>255) {
-            g_out=255;
-        }
-        stretchHist[g_out] += hist[i];
     }
     return stretchHist;
 }
+
+
 
 void lab8() {
     int op;
@@ -1740,12 +1756,16 @@ void lab8() {
             case 5: {
                 Mat_<uchar> img = imread("PI-L8/Hawkes_Bay_NZ.bmp", IMREAD_GRAYSCALE);
                 vector<int> hist = calchist(img, 256);
-                vector<int> stretchedHist = stretch_shrink_histogram(hist, 10, 250);
+                Mat_<uchar> imgNew(img.size());
+                vector<int> stretchedHist = stretch_shrink_histogram(hist, 10, 250, img, &imgNew);
                 showHistogram("Stretched Histogram", stretchedHist.data(), (int)stretchedHist.size(), 300);
+                imshow("Stretched Image", imgNew);
                 Mat_<uchar> img2 = imread("PI-L8/wheel.bmp", IMREAD_GRAYSCALE);
                 vector<int> hist2 = calchist(img2, 256);
-                vector<int> stretchedHist2 = stretch_shrink_histogram(hist2, 50, 150);
+                Mat_<uchar> img2New(img2.size());
+                vector<int> stretchedHist2 = stretch_shrink_histogram(hist2, 50, 150, img2, &img2New);
                 showHistogram("Shrunk Histogram", stretchedHist2.data(), (int)stretchedHist2.size(), 300);
+                imshow("Shrunk Image", img2New);
                 waitKey(0);
                 break;
             }
