@@ -1707,7 +1707,24 @@ vector<int> stretch_shrink_histogram(vector<int>& hist, int g_out_min, int g_out
     return stretchHist;
 }
 
-
+Mat_<uchar> gamma_correction(Mat_<uchar> img, float gamma) {
+    Mat_<uchar> corrected(img.size());
+    float L = 255.0f;
+    for (int i = 0; i < img.rows; i++) {
+        for (int j = 0; j < img.cols; j++) {
+            float normalized = img(i, j) / L;
+            float g_out = pow(normalized, gamma) * L;
+            if (g_out < 0) {
+                g_out = 0;
+            }
+            if (g_out > 255) {
+                g_out = 255;
+            }
+            corrected(i, j) = static_cast<uchar>(g_out);
+        }
+    }
+    return corrected;
+}
 
 void lab8() {
     int op;
@@ -1718,6 +1735,7 @@ void lab8() {
         printf(" 3 - Negative histogram \n");
         printf(" 4 - Brightness histogram \n");
         printf(" 5 - Stretch/Shrink histogram \n");
+        printf(" 6 - Gamma correction \n");
         printf(" 0 - Exit\n\n");
         printf("Option: ");
         scanf("%d",&op);
@@ -1766,6 +1784,15 @@ void lab8() {
                 vector<int> stretchedHist2 = stretch_shrink_histogram(hist2, 50, 150, img2, &img2New);
                 showHistogram("Shrunk Histogram", stretchedHist2.data(), (int)stretchedHist2.size(), 300);
                 imshow("Shrunk Image", img2New);
+                waitKey(0);
+                break;
+            }
+            case 6: {
+                Mat_<uchar> img = imread("PI-L8/wilderness.bmp", IMREAD_GRAYSCALE);
+                Mat_<uchar> gammaCorrected = gamma_correction(img, 0.5f);
+                imshow("Gamma Encoded", gammaCorrected);
+                Mat_<uchar> gammaCorrected2 = gamma_correction(img, 2.0f);
+                imshow("Gamma Decoded", gammaCorrected2);
                 waitKey(0);
                 break;
             }
