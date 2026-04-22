@@ -1726,6 +1726,41 @@ Mat_<uchar> gamma_correction(Mat_<uchar> img, float gamma) {
     return corrected;
 }
 
+vector<float> cdf(const vector<float>& pdf) {
+    vector<float> cdfres(pdf.size(), 0);
+    cdfres[0] = pdf[0];
+    for (int i = 1; i < pdf.size(); i++) {
+        cdfres[i] = cdfres[i-1] + pdf[i];
+    }
+    return cdfres;
+}
+
+void histogram_equalization(Mat_ <uchar> img) {
+    vector<float> pdfC = pdf(img);
+    vector<float> cdfC = cdf(pdfC);
+    float L=255.0f;
+    vector<int> equalizedHist(pdfC.size(), 0);
+    Mat_<uchar> equalizedImg(img.size());
+
+    for (int i=0; i<img.rows; i++) {
+        for (int j=0; j<img.cols; j++) {
+            int g_in = img(i, j);
+            int g_out = static_cast<int>(cdfC[g_in] * L);
+            if (g_out < 0) {
+                g_out = 0;
+            }
+            if (g_out > 255) {
+                g_out = 255;
+            }
+            equalizedImg(i, j) = g_out;
+            equalizedHist[g_out]++;
+        }
+    }
+    imshow("Original Image", img);
+    imshow("Equalized Image", equalizedImg);
+    showHistogram("Equalized Histogram", equalizedHist.data(), (int)equalizedHist.size(), 300);
+}
+
 void lab8() {
     int op;
     do{
@@ -1736,6 +1771,7 @@ void lab8() {
         printf(" 4 - Brightness histogram \n");
         printf(" 5 - Stretch/Shrink histogram \n");
         printf(" 6 - Gamma correction \n");
+        printf(" 7- Histogram equalization \n");
         printf(" 0 - Exit\n\n");
         printf("Option: ");
         scanf("%d",&op);
@@ -1793,6 +1829,15 @@ void lab8() {
                 imshow("Gamma Encoded", gammaCorrected);
                 Mat_<uchar> gammaCorrected2 = gamma_correction(img, 2.0f);
                 imshow("Gamma Decoded", gammaCorrected2);
+                waitKey(0);
+                break;
+            }
+            case 7: {
+                Mat_<uchar> img = imread("PI-L8/Hawkes_Bay_NZ.bmp", IMREAD_GRAYSCALE);
+                histogram_equalization(img);
+                waitKey(0);
+                Mat_<uchar> img2 = imread("PI-L8/wheel.bmp", IMREAD_GRAYSCALE);
+                histogram_equalization(img2);
                 waitKey(0);
                 break;
             }
