@@ -1561,6 +1561,199 @@ void project() {
     destroyWindow("Laptop Camera");
 }
 
+double mean(Mat_<uchar> img) {
+    vector<int> hist = calchist(img, 256);
+    double M = (double)img.rows * img.cols;
+    double mean = 0;
+    for (int i = 0; i < hist.size(); i++) {
+        mean += i * hist[i] / M;
+    }
+    return mean;
+}
+
+double standard_deviation(Mat_<uchar> img) {
+    double meanVar = mean(img);
+    vector<int> hist = calchist(img, 256);
+    double M = (double)img.rows * img.cols;
+    double var = 0;
+    for (int i = 0; i < hist.size(); i++) {
+        var += hist[i] * pow(i - meanVar, 2);
+    }
+    var /= M;
+    return sqrt(var);
+}
+
+vector<int> cumulative_histogram(Mat_<uchar> img) {
+    vector<int> hist = calchist(img, 256);
+    vector<int> cumHist(hist.size(), 0);
+    cumHist[0] = hist[0];
+    for (int i = 1; i < hist.size(); i++) {
+        cumHist[i] = cumHist[i-1] + hist[i];
+    }
+    return cumHist;
+}
+
+void ex1lab8() {
+    Mat_<uchar> img = imread("PI-L8/balloons.bmp", IMREAD_GRAYSCALE);
+    double meanVal = mean(img);
+    double stddevVal = standard_deviation(img);
+    cout << "Mean: " << meanVal << endl;
+    cout << "Standard Deviation: " << stddevVal << endl;
+    vector<int> hist = calchist(img, 256);
+    vector<int> cumulativeHist = cumulative_histogram(img);
+    showHistogram("Histogram", hist.data(), (int)hist.size(), 300);
+    showHistogram("Cumulative Histogram", cumulativeHist.data(), (int)cumulativeHist.size(), 300);
+    waitKey(0);
+}
+
+float automatic_threshold(Mat_<uchar> img) {
+    vector<int> hist = calchist(img, 256);
+    int Imin = 0, Imax = 255;
+    for (int i = 0; i < hist.size(); i++) {
+        if (hist[i] > 0) {
+            Imin = i;
+            break;
+        }
+    }
+    for (int i = hist.size() - 1; i >= 0; i--) {
+        if (hist[i] > 0) {
+            Imax = i;
+            break;
+        }
+    }
+    float T = (Imin + Imax) / 2.0f;
+    while (true) {
+        float sum1 = 0, sum2 = 0;
+        int count1 = 0, count2 = 0;
+        for (int i = Imin; i <= Imax; i++) {
+            if (i <= T) {
+                sum1 += i * hist[i];
+                count1 += hist[i];
+            } else {
+                sum2 += i * hist[i];
+                count2 += hist[i];
+            }
+        }
+        if (count1 == 0 || count2 == 0) {
+            break;
+        }
+        float mu1 = sum1 / count1;
+        float mu2 = sum2 / count2;
+        float new_threshold = (mu1 + mu2) / 2.0f;
+        if (abs(new_threshold - T) < 0.1f) {
+            T = new_threshold;
+            break;
+        }
+        T = new_threshold;
+    }
+    return T;
+}
+
+vector<int> negative_histogram(const vector<int>& hist) {
+    vector<int> negHist(hist.size(), 0);
+    for (int i = 0; i < hist.size(); i++) {
+        negHist[i] = hist[hist.size() - 1 - i];
+    }
+    return negHist;
+}
+
+vector<int> brightness_histogram(const vector<int>& hist) {
+    vector<int> brightHist(hist.size(), 0);
+    for (int i = 0; i < hist.size(); i++) {
+        brightHist[i] = hist[i];
+    }
+    return brightHist;
+}
+
+vector<int> stretch_shrink_histogram(vector<int>& hist, int g_out_min, int g_out_max) {
+    vector<int> stretchHist(hist.size(), 0);
+    int g_in_min = 0, g_in_max = 255;
+    for (int i = 0; i < hist.size(); i++) {
+        if (hist[i] > 0) {
+            g_in_min = i;
+            break;
+        }
+    }
+    for (int i = hist.size() - 1; i >= 0; i--) {
+        if (hist[i] > 0) {
+            g_in_max = i;
+            break;
+        }
+    }
+    for (int i = g_in_min; i <= g_in_max; i++) {
+        int g_out = g_out_min + (i - g_in_min) * (float)(g_out_max - g_out_min) / (g_in_max - g_in_min);
+        if (g_out<0) {
+            g_out=0;
+        }
+        if (g_out>255) {
+            g_out=255;
+        }
+        stretchHist[g_out] += hist[i];
+    }
+    return stretchHist;
+}
+
+void lab8() {
+    int op;
+    do{
+        printf("Menu:\n");
+        printf(" 1 - Compute and Display the Mean and Standard Deviation, the Histogram and the Cumulative Histograms \n");
+        printf(" 2 - Automatic threshold computation and threshold images \n");
+        printf(" 3 - Negative histogram \n");
+        printf(" 4 - Brightness histogram \n");
+        printf(" 5 - Stretch/Shrink histogram \n");
+        printf(" 0 - Exit\n\n");
+        printf("Option: ");
+        scanf("%d",&op);
+        switch (op)
+        {
+            case 1: {
+                ex1lab8();
+                break;
+            }
+            case 2: {
+                Mat_<uchar> img = imread("Images/eight.bmp", IMREAD_GRAYSCALE);
+                int T = automatic_threshold(img);
+                cout << "Automatic Threshold: " << T << endl;
+                Mat_<uchar> thresholded=convertGrayToBinary(img, T);
+                imshow("Original Image", img);
+                imshow("Thresholded Image", thresholded);
+                waitKey(0);
+                break;
+            }
+            case 3: {
+                Mat_<uchar> img = imread("Images/eight.bmp", IMREAD_GRAYSCALE);
+                vector<int> hist = calchist(img, 256);
+                vector<int> negHist = negative_histogram(hist);
+                showHistogram("Negative Histogram", negHist.data(), (int)negHist.size(), 300);
+                waitKey(0);
+                break;
+            }
+            case 4: {
+                Mat_<uchar> img = imread("Images/eight.bmp", IMREAD_GRAYSCALE);
+                vector<int> hist = calchist(img, 256);
+                vector<int> brightHist = brightness_histogram(hist);
+                showHistogram("Brightness Histogram", brightHist.data(), (int)brightHist.size(), 300);
+                waitKey(0);
+                break;
+            }
+            case 5: {
+                Mat_<uchar> img = imread("PI-L8/Hawkes_Bay_NZ.bmp", IMREAD_GRAYSCALE);
+                vector<int> hist = calchist(img, 256);
+                vector<int> stretchedHist = stretch_shrink_histogram(hist, 10, 250);
+                showHistogram("Stretched Histogram", stretchedHist.data(), (int)stretchedHist.size(), 300);
+                Mat_<uchar> img2 = imread("PI-L8/wheel.bmp", IMREAD_GRAYSCALE);
+                vector<int> hist2 = calchist(img2, 256);
+                vector<int> stretchedHist2 = stretch_shrink_histogram(hist2, 50, 150);
+                showHistogram("Shrunk Histogram", stretchedHist2.data(), (int)stretchedHist2.size(), 300);
+                waitKey(0);
+                break;
+            }
+        }
+    }
+    while (op!=0);
+}
+
 void negative_image(){
     Mat_<uchar> img = imread("Images/cameraman.bmp",
      IMREAD_GRAYSCALE);
@@ -1707,6 +1900,7 @@ int main(){
         printf(" 5 - Lab5 \n");
         printf(" 6 - Lab6 \n");
         printf(" 7 - Lab7 \n");
+        printf(" 8 - Lab8 \n");
         printf(" 15 - Project \n");
         printf(" 0 - Exit\n\n");
         printf("Option: ");
@@ -1733,6 +1927,9 @@ int main(){
                 break;
             case 7:
                 lab7();
+                break;
+            case 8:
+                lab8();
                 break;
             case 15:
                 project();
