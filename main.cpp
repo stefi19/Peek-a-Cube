@@ -7,6 +7,8 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <ctime>
+#include <iomanip>
 using namespace std;
 using namespace cv;
 
@@ -1529,6 +1531,21 @@ void lab7() {
     while (op!=0);
 }
 
+bool capture_photo(VideoCapture& cap) {
+    Mat_<Vec3b> photo;
+    cap >> photo;
+    if (photo.empty()) {
+        cout << "Failed to capture photo" << endl;
+        return false;
+    }
+    time_t now = time(nullptr);
+    tm localNow = *localtime(&now);
+    ostringstream filename;
+    filename << "Project/capture_" << put_time(&localNow, "%Y%m%d_%H%M%S") << ".bmp";
+    bool saved = imwrite(filename.str(), photo);
+    return saved;
+}
+
 void project() {
     VideoCapture cap(0, CAP_AVFOUNDATION);
     if (!cap.isOpened()) {
@@ -1538,7 +1555,7 @@ void project() {
         cout << "Could not open the laptop camera. Check macOS Camera permissions for CLion/Terminal." << endl;
         return;
     }
-    cout << "Camera opened. Press ESC or q to close." << endl;
+    cout << "Camera opened. Press P to capture photo, ESC or q to close." << endl;
     Mat_<Vec3b> frame;
     while (true) {
         cap >> frame;
@@ -1549,13 +1566,30 @@ void project() {
         rectangle(frame, Point(10, 10), Point(370, 60), Scalar(0, 0, 0), FILLED);
         putText(frame, "Lab Project", Point(20, 35),
                 FONT_HERSHEY_SIMPLEX, 0.7, Scalar(0, 255, 255), 2);
-        putText(frame, "Press q or ESC to stop live", Point(20, 55),
+        putText(frame, "Press P to capture | q or ESC to stop", Point(20, 55),
                 FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 255), 1);
         imshow("Laptop Camera", frame);
         int key = waitKey(30);
+        if (key == 'p' || key == 'P') {
+            capture_photo(cap);
+            continue;
+        }
         if (key == 27 || key == 'q' || key == 'Q') {
             break;
         }
+
+        // convert to HSV, modify the V channel to normalize light (gamma correction), then convert back to BGR
+        // red, orange, yellow colors have S big, so we can detect them in a mask
+        // white has small S, but great V so we can detect it in the mask
+        // apply erosion and dilation to the mask to remove noise and fill holes
+        // apply two-pass connected components
+        // find the 9 cube borders
+        // bcs the background can introduce noise, we compute the median area and filter out connected components that are too small or too big compared to the median
+        // for each component, take the pixel from the center and then color the rest -> shadows, reflexions are avoided
+        // classify the color
+        // display the result
+
+
     }
     cap.release();
     destroyWindow("Laptop Camera");
