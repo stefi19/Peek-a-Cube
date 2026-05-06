@@ -9,8 +9,11 @@
 #include <sstream>
 #include <ctime>
 #include <iomanip>
+#include <algorithm>
 using namespace std;
 using namespace cv;
+
+Mat_<uchar> gamma_correction(Mat_<uchar> img, float gamma);
 
 void lab1(){
     Mat_<Vec3b> img(300,200);
@@ -1007,7 +1010,7 @@ void unite(vector<int>& parent, int a, int b) {
         parent[b] = a;
 }
 
-void twopass_connected_components(Mat_<uchar> img, Mat_<int>& labels, bool use8Neighbors) {
+void twopass_connected_components(Mat_<uchar> img, Mat_<int>& labels, bool use8Neighbors, bool showIntermediate = true) {
     vector<Point> directions;
 
     vector<int> parent(10000);
@@ -1049,7 +1052,9 @@ void twopass_connected_components(Mat_<uchar> img, Mat_<int>& labels, bool use8N
         }
     }
 
-    displayLabels(labels, "between passes");
+    if (showIntermediate) {
+        displayLabels(labels, "between passes");
+    }
 
     for (int i = 0; i < labels.rows; i++) {
         for (int j = 0; j < labels.cols; j++) {
@@ -1531,70 +1536,6 @@ void lab7() {
     while (op!=0);
 }
 
-bool capture_photo(VideoCapture& cap) {
-    Mat_<Vec3b> photo;
-    cap >> photo;
-    if (photo.empty()) {
-        cout << "Failed to capture photo" << endl;
-        return false;
-    }
-    time_t now = time(nullptr);
-    tm localNow = *localtime(&now);
-    ostringstream filename;
-    filename << "Project/capture_" << put_time(&localNow, "%Y%m%d_%H%M%S") << ".bmp";
-    bool saved = imwrite(filename.str(), photo);
-    return saved;
-}
-
-void project() {
-    VideoCapture cap(0, CAP_AVFOUNDATION);
-    if (!cap.isOpened()) {
-        cap.open(0);
-    }
-    if (!cap.isOpened()) {
-        cout << "Could not open the laptop camera. Check macOS Camera permissions for CLion/Terminal." << endl;
-        return;
-    }
-    cout << "Camera opened. Press P to capture photo, ESC or q to close." << endl;
-    Mat_<Vec3b> frame;
-    while (true) {
-        cap >> frame;
-        if (frame.empty()) {
-            cout << "Received empty frame from camera. Stopping." << endl;
-            break;
-        }
-        rectangle(frame, Point(10, 10), Point(370, 60), Scalar(0, 0, 0), FILLED);
-        putText(frame, "Lab Project", Point(20, 35),
-                FONT_HERSHEY_SIMPLEX, 0.7, Scalar(0, 255, 255), 2);
-        putText(frame, "Press P to capture | q or ESC to stop", Point(20, 55),
-                FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 255), 1);
-        imshow("Laptop Camera", frame);
-        int key = waitKey(30);
-        if (key == 'p' || key == 'P') {
-            capture_photo(cap);
-            continue;
-        }
-        if (key == 27 || key == 'q' || key == 'Q') {
-            break;
-        }
-
-        // convert to HSV, modify the V channel to normalize light (gamma correction), then convert back to BGR
-        // red, orange, yellow colors have S big, so we can detect them in a mask
-        // white has small S, but great V so we can detect it in the mask
-        // apply erosion and dilation to the mask to remove noise and fill holes
-        // apply two-pass connected components
-        // find the 9 cube borders
-        // bcs the background can introduce noise, we compute the median area and filter out connected components that are too small or too big compared to the median
-        // for each component, take the pixel from the center and then color the rest -> shadows, reflexions are avoided
-        // classify the color
-        // display the result
-
-
-    }
-    cap.release();
-    destroyWindow("Laptop Camera");
-}
-
 double mean(Mat_<uchar> img) {
     vector<int> hist = calchist(img, 256);
     double M = (double)img.rows * img.cols;
@@ -1880,6 +1821,408 @@ void lab8() {
     while (op!=0);
 }
 
+Mat_ <float>convolution(const Mat_<uchar>& img, const Mat_<float>& kernel) {
+    int kRows = kernel.rows;
+    int kCols = kernel.cols;
+    Mat_<float> result_img(img.size());
+    result_img.setTo(0);
+    for (int i=0; i<img.rows; i++) {
+        for (int j=0; j<img.cols; j++) {
+            float sum = 0.0f;
+            for (int u=0; u<kRows; u++) {
+                for (int v=0; v<kCols; v++) {
+                    int i2 = i + u - kRows / 2;
+                    int j2 = j + v - kCols / 2;
+                    if (isInside(img, i2, j2)) {
+                        sum += img(i2, j2) * kernel(u, v);
+                    }
+                }
+            }
+            result_img(i, j) = sum;
+        }
+    }
+    return result_img;
+}
+
+pair<float,float> computeAandB(Mat_<float> img) {
+    float negative_sum=0;
+    float positive_sum=0;
+    for (int i=0; i<img.rows; i++) {
+        for (int j=0; j<img.cols; j++) {
+            if (img(i, j) < 0) {
+                negative_sum += img(i, j);
+            }
+            else {
+                positive_sum+=img(i,j);
+            }
+        }
+    }
+    float a = negative_sum*255;
+    float b = positive_sum*255;
+    cout<<a << " " <<b<<endl;
+    return {a, b};
+}
+
+Mat_<uchar> applyRawNormalization(Mat_<float> img, Mat_<float> kernel) {
+    Mat_<uchar> normalized(img.size());
+    pair<float, float> aAndB = computeAandB(kernel);
+    float a = aAndB.first;
+    float b = aAndB.second;
+    //gout = (gin-a)*255/(b-a)
+    for (int i=0; i<img.rows; i++) {
+        for (int j=0; j<img.cols; j++) {
+            float val = img(i, j);
+            normalized(i, j) = static_cast<uchar>((val - a) * 255.0f / (b - a));
+        }
+    }
+    return normalized;
+}
+Mat_<uchar> applyAbsoluteNormalization(Mat_<float> img, Mat_<float> kernel) {
+    Mat_<uchar> normalized(img.size());
+    pair<float, float> aAndB = computeAandB(kernel);
+    float a = aAndB.first;
+    float b = aAndB.second;
+    //gout = abs(gin*255/max(abs(a),b))
+    for (int i=0; i<img.rows; i++) {
+        for (int j=0; j<img.cols; j++) {
+            float val = img(i, j);
+            normalized(i,j)=static_cast<uchar>(abs(val*255/max(abs(a),b)));
+        }
+    }
+    return normalized;
+}
+
+Mat_<float> createMeanKernel3x3() {
+    Mat_<float> k = (Mat_<float>(3, 3) <<
+        1, 1, 1,
+        1, 1, 1,
+        1, 1, 1
+    );
+
+    k /= 9.0f;
+    return k;
+}
+
+Mat_<float> createGaussianKernel3x3() {
+    Mat_<float> k = (Mat_<float>(3, 3) <<
+        1, 2, 1,
+        2, 4, 2,
+        1, 2, 1
+    );
+
+    k /= 16.0f;
+    return k;
+}
+
+Mat_<float> createLaplace4Kernel3x3() {
+    return (Mat_<float>(3, 3) <<
+         0, -1,  0,
+        -1,  4, -1,
+         0, -1,  0
+    );
+}
+
+Mat_<float> createLaplace8Kernel3x3() {
+    return (Mat_<float>(3, 3) <<
+        -1, -1, -1,
+        -1,  8, -1,
+        -1, -1, -1
+    );
+}
+
+Mat_<float> createHighPass4Kernel3x3() {
+    return (Mat_<float>(3, 3) <<
+         0, -1,  0,
+        -1,  5, -1,
+         0, -1,  0
+    );
+}
+
+Mat_<float> createHighPass8Kernel3x3() {
+    return (Mat_<float>(3, 3) <<
+        -1, -1, -1,
+        -1,  9, -1,
+        -1, -1, -1
+    );
+}
+
+void applyConvol(Mat_<uchar> img, Mat_<float> kernel) {
+    Mat_<float> convol_img=convolution(img, kernel);
+    Mat_<uchar> normalized_img_raw=applyRawNormalization(convol_img,kernel);
+    Mat_<uchar> normalized_img_abs=applyAbsoluteNormalization(convol_img, kernel);
+    imshow("Original image", img);
+    imshow("Raw image", normalized_img_raw);
+    imshow("absolute image", normalized_img_abs);
+    waitKey(0);
+}
+
+void lab9() {
+    int op;
+    do{
+        printf("Menu:\n");
+        printf(" 1 - Convolution \n");
+        printf(" 0 - Exit\n\n");
+        printf("Option: ");
+        scanf("%d",&op);
+        switch (op)
+        {
+            case 1: {
+                Mat_<uchar> img = imread("PI-L9/cameraman.bmp", IMREAD_GRAYSCALE);
+                vector<Mat_<float>> kernels = {createMeanKernel3x3(), createGaussianKernel3x3(), createLaplace8Kernel3x3(), createLaplace4Kernel3x3(), createHighPass4Kernel3x3(), createHighPass8Kernel3x3()};
+                for (Mat_<float> kernel : kernels) {
+                    applyConvol(img,kernel);
+                }
+
+                break;
+            }
+        }
+    }
+    while (op!=0);
+}
+
+Mat_<float> ideal_low_pass_filter(Mat_<uchar> img, float r) {
+    Mat_ <float> filter(img.size(), 0.0f);
+    r=pow(r,2);
+    for (int i = 0; i < img.rows; i++) {
+        for (int j = 0; j < img.cols; j++) {
+            float a = ((float)img.rows/2 - i)*((float)img.rows/2 - i);
+            float b = ((float)img.cols/2 - j)*((float)img.cols/2 - j);
+            float left = a+b;
+            if (left<=r) {
+                filter(i,j)=1;
+            }
+            else {
+                filter(i,j)=0;
+            }
+        }
+    }
+    return filter;
+}
+Mat_<float> ideal_high_pass_filter(Mat_<uchar> img, float r) {
+    Mat_ <float> filter(img.size(), 0.0f);
+    r=pow(r,2);
+    for (int i = 0; i < img.rows; i++) {
+        for (int j = 0; j < img.cols; j++) {
+            int a = ((float)img.rows/2 - i)*((float)img.rows/2 - i);
+            int b = ((float)img.cols/2 - j)*((float)img.cols/2 - j);
+            float left = a+b;
+            if (left>r) {
+                filter(i,j)=1;
+            }
+            else {
+                filter(i,j)=0;
+            }
+        }
+    }
+    return filter;
+}
+
+Mat_<float> gaussian_low_pass_filter(Mat_<uchar> img, float a) {
+    Mat_<float> dest(img.size(), 0.0f);
+    // float d = standard_deviation(img);
+    // float a = 1/d;
+    for (int i=0; i<img.rows; i++) {
+        for (int j=0; j<img.cols; j++) {
+            float x = ((float)img.rows/2 - i)*((float)img.rows/2 - i);
+            float y = ((float)img.cols/2 - j)*((float)img.cols/2 - j);
+            float exponent= (x+y)/(a*a)*(-1);
+            dest(i,j)=exp(exponent);
+        }
+    }
+    return dest;
+}
+
+Mat_<float> gaussian_high_pass_filter(Mat_<uchar> img, float a) {
+    Mat_<float> dest(img.size(), 0.0f);
+    for (int i=0; i<img.rows; i++) {
+        for (int j=0; j<img.cols; j++) {
+            float x = ((float)img.rows/2 - i)*((float)img.rows/2 - i);
+            float y = ((float)img.cols/2 - j)*((float)img.cols/2 - j);
+            float exponent = (x+y)/(a*a)*(-1);
+            dest(i,j)=1-exp(exponent);
+        }
+    }
+    return dest;
+}
+
+void centering_transform(Mat img){
+    //expects floating point image
+    for (int i = 0; i < img.rows; i++){
+        for (int j = 0; j < img.cols; j++){
+            img.at<float>(i, j) = ((i + j) & 1) ? -img.at<float>(i, j) : img.at<float>(i, j);
+        }
+    }
+}
+
+Mat_<float> generic_frequency_domain_filter(Mat_<uchar> src, Mat_<float> filter, bool normalize_result) {
+    //convert input image to float image
+    Mat srcf;
+    src.convertTo(srcf, CV_32FC1);
+    //centering transformation
+    centering_transform(srcf);
+    //perform forward transform with complex image output
+    Mat fourier;
+    dft(srcf, fourier, DFT_COMPLEX_OUTPUT);
+    //split into real and imaginary channels
+    Mat channels[] = { Mat::zeros(src.size(), CV_32F), Mat::zeros(src.size(), CV_32F) };
+    split(fourier, channels); // channels[0] = Re(DFT(I)), channels[1] = Im(DFT(I))
+    //calculate magnitude and phase in floating point images mag and phi
+    Mat mag, phi;
+    magnitude(channels[0], channels[1], mag);
+    phase(channels[0], channels[1], phi);
+    //display the phase and magnitude images here
+    // ......
+    Mat mag2=mag.clone();
+    mag2 += Scalar::all(1);//to avoid log(0)
+    log(mag2, mag2);
+    normalize(mag2, mag2, 0, 255, NORM_MINMAX, CV_8UC1);
+    imshow("Magnitude", mag2);
+    Mat phi2=phi.clone();
+    normalize(phi2, phi2, 0, 255, NORM_MINMAX, CV_8UC1);
+    imshow("Phase", phi2);
+    //insert filtering operations on Fourier coefficients here
+    // ......
+    Mat mag3=mag.mul(filter);
+    //store in real part in channels[0] and imaginary part in channels[1]
+    // ......
+    for (int i = 0; i < mag.rows; i++) {
+        for (int j = 0; j < mag.cols; j++) {
+            channels[0].at<float>(i, j) = mag3.at<float>(i, j) * cos(phi.at<float>(i, j));
+            channels[1].at<float>(i, j) = mag3.at<float>(i, j) * sin(phi.at<float>(i, j));
+        }
+    }
+    //perform inverse transform and put results in dstf
+    Mat dst, dstf;
+    merge(channels, 2, fourier);
+    dft(fourier, dstf, DFT_INVERSE | DFT_REAL_OUTPUT | DFT_SCALE);
+    //inverse centering transformation
+    centering_transform(dstf);
+    //normalize the result and put in the destination image
+    //normalize(dstf, dst, 0, 255, NORM_MINMAX, CV_8UC1);
+    //Note: normalizing distorts the resut while enhancing the image display in the range [0,255].
+    //For exact results (see Practical work 3) the normalization should be replaced with convertion:
+    if (normalize_result) {
+        normalize(dstf, dst, 0, 255, NORM_MINMAX, CV_8UC1);
+    }
+    else {
+        dstf.convertTo(dst, CV_8UC1);
+    }
+    return dst;
+}
+
+Mat_<uchar> crop_to_same_ratio(Mat_<uchar> img, Size target_size) {
+    float target_ratio = (float)target_size.width / target_size.height;
+    float img_ratio = (float)img.cols / img.rows;
+    Rect roi; //region of interest
+    if (img_ratio > target_ratio) {
+        int new_width = (int)(img.rows * target_ratio);
+        int x = (img.cols - new_width) / 2;
+        roi = Rect(x, 0, new_width, img.rows);
+    }
+    else {
+        int new_height = (int)(img.cols / target_ratio);
+        int y = (img.rows - new_height) / 2;
+        roi = Rect(0, y, img.cols, new_height);
+    }
+    Mat cropped = img(roi).clone();
+    Mat resized;
+    resize(cropped, resized, target_size);
+    return resized;
+}
+
+void hybrid_image_utcn_eth() {
+    Mat_<uchar> utcn_initial = imread("Img/utcn.jpg", IMREAD_GRAYSCALE);
+    Mat_<uchar> eth_initial = imread("Img/ETH.jpg", IMREAD_GRAYSCALE);
+    Size target_size(eth_initial.cols, eth_initial.rows);
+    Mat_<uchar> utcn = crop_to_same_ratio(utcn_initial, target_size);
+    Mat_<uchar> eth = eth_initial.clone();
+
+    Mat_<float> low_filter = gaussian_low_pass_filter(utcn, 25.0f);
+    Mat_<float> high_filter = gaussian_high_pass_filter(eth, 12.0f);
+
+    Mat_<float> utcn_low = generic_frequency_domain_filter(utcn, low_filter,1);
+    Mat_<float> eth_high = generic_frequency_domain_filter(eth, high_filter, 1);
+
+    Mat_<float> hybrid_float = 0.53f*utcn_low + 0.47f * eth_high;
+
+    Mat hybrid;
+    hybrid_float.convertTo(hybrid, CV_8UC1);
+
+    imshow("UTCN resized", utcn);
+    imshow("ETH resized", eth);
+    imshow("Hybrid image", hybrid);
+
+    waitKey(0);
+}
+
+void lab10() {
+    int op;
+    do{
+        printf("Menu:\n");
+        printf(" 1 - Same picture \n");
+        printf(" 2 - Ideal Low Pass Filter \n");
+        printf(" 3 - Ideal High Pass Filter \n");
+        printf(" 4 - Gaussian Low Pass Filter \n");
+        printf(" 5 - Gaussian High Pass Filter \n");
+        printf(" 6 - Current vs DREAM \n");
+        printf(" 0 - Exit\n\n");
+        printf("Option: ");
+        scanf("%d",&op);
+        switch (op)
+        {
+            case 1: {
+                Mat_<uchar> img = imread("PI-L9/cameraman.bmp", IMREAD_GRAYSCALE);
+                Mat filter(img.size(), CV_32FC1, Scalar(1));
+                Mat dst = generic_frequency_domain_filter(img, filter,0);
+                imshow("Filtered Image", dst);
+                waitKey(0);
+                break;
+            }
+            case 2: {
+                Mat_<uchar> img = imread("PI-L9/cameraman.bmp", IMREAD_GRAYSCALE);
+                Mat filter = ideal_low_pass_filter(img, 30.0f);
+                Mat dst = generic_frequency_domain_filter(img, filter,0);
+                imshow("initial image", img);
+                imshow("Ideal Low Pass Filtered Image", dst);
+                waitKey(0);
+                break;
+            }
+            case 3: {
+                Mat_<uchar> img = imread("PI-L9/cameraman.bmp", IMREAD_GRAYSCALE);
+                Mat filter = ideal_high_pass_filter(img, 30.0f);
+                Mat dst = generic_frequency_domain_filter(img, filter,1);
+                imshow("initial image", img);
+                imshow("Ideal High Pass Filtered Image", dst);
+                waitKey(0);
+                break;
+            }
+            case 4: {
+                Mat_<uchar> img = imread("PI-L9/cameraman.bmp", IMREAD_GRAYSCALE);
+                Mat filter = gaussian_low_pass_filter(img, 40.0f);
+                Mat dst = generic_frequency_domain_filter(img, filter,1);
+                imshow("initial image", img);
+                imshow("Gaussian Low Pass Filtered Image", dst);
+                waitKey(0);
+                break;
+            }
+            case 5: {
+                Mat_<uchar> img = imread("PI-L9/cameraman.bmp", IMREAD_GRAYSCALE);
+                Mat filter = gaussian_high_pass_filter(img, 40.0f);
+                Mat dst = generic_frequency_domain_filter(img, filter,1);
+                imshow("Initial image", img);
+                imshow("Gaussian High Pass Filtered Image", dst);
+                waitKey(0);
+                break;
+            }
+            case 6: {
+                hybrid_image_utcn_eth();
+                waitKey(0);
+                break;
+            }
+        }
+    }
+    while (op!=0);
+}
 void negative_image(){
     Mat_<uchar> img = imread("Images/cameraman.bmp",
      IMREAD_GRAYSCALE);
@@ -2027,6 +2370,8 @@ int main(){
         printf(" 6 - Lab6 \n");
         printf(" 7 - Lab7 \n");
         printf(" 8 - Lab8 \n");
+        printf(" 9 - Lab9 \n");
+        printf(" 10 - Lab10 \n");
         printf(" 15 - Project \n");
         printf(" 0 - Exit\n\n");
         printf("Option: ");
@@ -2057,9 +2402,15 @@ int main(){
             case 8:
                 lab8();
                 break;
-            case 15:
-                project();
+            case 9:
+                lab9();
                 break;
+            case 10:
+                lab10();
+                break;
+            // case 15:
+            //     project();
+            //     break;
         }
     }
     while (op!=0);
