@@ -2245,6 +2245,22 @@ Mat_<float> createGaussianKernel2D(int w) {
     return kernel;
 }
 
+Mat_<float> createGaussianKernel1D(int w) {
+    Mat_<float> kernel(1, w);
+    float sigma = w / 6.0f;
+    int center = w / 2;
+    float sum = 0.0f;
+    for (int j = 0; j < w; j++) {
+        float x = j - center;
+        kernel(0, j) = (1.0f / (sqrt(2.0f * CV_PI) * sigma)) * exp(-(x * x) / (2.0f * sigma * sigma));
+        sum += kernel(0, j);
+    }
+    for (int j = 0; j < w; j++) {
+        kernel(0, j) /= sum;
+    }
+    return kernel;
+}
+
 Mat_<uchar> applyGaussian2D(Mat_<float> kernel, Mat_<uchar> img, int w) {
     Mat_<uchar> result(img.rows, img.cols);
 
@@ -2266,7 +2282,6 @@ Mat_<uchar> applyGaussian2D(Mat_<float> kernel, Mat_<uchar> img, int w) {
     return result;
 }
 
-
 void Gaussian_2D(Mat_<uchar> img) {
     int w;
     cout << "Enter Gaussian kernel size w = 3, 5 or 7: ";
@@ -2281,11 +2296,122 @@ void Gaussian_2D(Mat_<uchar> img) {
     waitKey(0);
 }
 
+Mat_<float> createGaussianKernelGx(int w) {
+    Mat_<float> kernel(1, w);
+    float sigma = w / 6.0f;
+    int center = w / 2;
+    float sum = 0.0f;
+    for (int x = 0; x < w; x++) {
+        kernel(0, x) = (1.0f / (sqrt(2.0f * CV_PI) * sigma)) * exp(-((x - center) * (x - center)) / (2.0f * sigma * sigma));
+        sum += kernel(0, x);
+    }
+    for (int x = 0; x < w; x++) {
+        kernel(0, x) /= sum;
+    }
+    return kernel;
+}
+
+Mat_<float> createGaussianKernelGy(int w) {
+    Mat_<float> kernel(w, 1);
+    float sigma = w / 6.0f;
+    int center = w / 2;
+    float sum = 0.0f;
+    for (int y = 0; y < w; y++) {
+        kernel(y, 0) = (1.0f / (sqrt(2.0f * CV_PI) * sigma)) * exp(-((y - center) * (y - center)) / (2.0f * sigma * sigma));
+        sum += kernel(y, 0);
+    }
+    for (int y = 0; y < w; y++) {
+        kernel(y, 0) /= sum;
+    }
+    return kernel;
+}
+
+Mat_<uchar> applyGaussian1D(Mat_<uchar> img, int w, Mat_<float> Gx, Mat_<float> Gy) {
+    Mat_<float> temp(img.rows, img.cols);
+    Mat_<uchar> result(img.rows, img.cols);
+    for (int i = 0; i < img.rows; i++) {
+        for (int j = 0; j < img.cols; j++) {
+            float sum = 0.0f;
+            for (int v = 0; v < w; v++) {
+                int j2 = j + v - w / 2;
+                if (isInside(img, i, j2)) {
+                    sum += img(i, j2) * Gx(0, v);
+                }
+            }
+            temp(i, j) = sum;
+        }
+    }
+    for (int i = 0; i < img.rows; i++) {
+        for (int j = 0; j < img.cols; j++) {
+            float sum = 0.0f;
+            for (int u = 0; u < w; u++) {
+                int i2 = i + u - w / 2;
+                if (i2 >= 0 && i2 < img.rows) {
+                    sum += temp(i2, j) * Gy(u, 0);
+                }
+            }
+            result(i, j) = saturate((int)round(sum));
+        }
+    }
+    return result;
+}
+
+void Gaussian_1D(Mat_<uchar> img) {
+    int w;
+    cout << "Enter Gaussian kernel size w = 3, 5 or 7: ";
+    cin >> w;
+    Mat_<float> Gx = createGaussianKernelGx(w);
+    Mat_<float> Gy = createGaussianKernelGy(w);
+    double t = (double)getTickCount();
+    Mat_<uchar> result = applyGaussian1D(img, w, Gx, Gy);
+    t = ((double)getTickCount() - t) / getTickFrequency();
+    cout << "Gaussian 1D separated time = " << t * 1000 << " ms\n";
+    imshow("Original image", img);
+    imshow("Gaussian 1D filtered image", result);
+    waitKey(0);
+}
+
+Mat_<uchar> applyMedianFilter(Mat_<uchar> img, int w) {
+    Mat_<uchar> result(img.rows, img.cols);
+    for (int i = 0; i < img.rows; i++) {
+        for (int j = 0; j < img.cols; j++) {
+            vector<uchar> values;
+            for (int u = 0; u < w; u++) {
+                for (int v = 0; v < w; v++) {
+                    int i2 = i + u - w / 2;
+                    int j2 = j + v - w / 2;
+                    if (isInside(img, i2, j2)) {
+                        values.push_back(img(i2, j2));
+                    }
+                }
+            }
+            sort(values.begin(), values.end());
+            result(i, j) = values[values.size() / 2];
+        }
+    }
+    return result;
+}
+
+void Median_Filter(Mat_<uchar> img) {
+    int w;
+    cout << "Enter median filter size w = 3, 5 or 7: ";
+    cin >> w;
+    double t = (double)getTickCount();
+    Mat_<uchar> result = applyMedianFilter(img, w);
+    t = ((double)getTickCount() - t) / getTickFrequency();
+    cout << "Median filter time = " << t * 1000 << " ms\n";
+    imshow("Original image", img);
+    imshow("Median filtered image", result);
+    waitKey(0);
+}
+
 void lab11() {
     int op;
     do{
         printf("Menu:\n");
         printf(" 1 - Gaussian 2D \n");
+        printf(" 2 - Gaussian 1D \n");
+        printf(" 3 - Median filter \n");
         printf(" 0 - Exit\n\n");
         printf("Option: ");
         scanf("%d",&op);
@@ -2298,7 +2424,20 @@ void lab11() {
                 Gaussian_2D(img);
                 break;
             }
-
+            case 2: {
+                Mat_ <uchar> img2 = imread("PI-L10/portrait_Gauss2.bmp", IMREAD_GRAYSCALE);
+                Gaussian_1D(img2);
+                Mat_ <uchar> img = imread("PI-L10/balloons_Gauss.bmp", IMREAD_GRAYSCALE);
+                Gaussian_1D(img);
+                break;
+            }
+            case 3: {
+                Mat_ <uchar> img2 = imread("PI-L10/portrait_Gauss2.bmp", IMREAD_GRAYSCALE);
+                Median_Filter(img2);
+                Mat_ <uchar> img = imread("PI-L10/balloons_Gauss.bmp", IMREAD_GRAYSCALE);
+                Median_Filter(img);
+                break;
+            }
         }
     }
     while (op!=0);
