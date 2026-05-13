@@ -2223,6 +2223,87 @@ void lab10() {
     }
     while (op!=0);
 }
+
+Mat_<float> createGaussianKernel2D(int w) {
+    Mat_<float> kernel(w, w);
+    float sigma = w / 6.0f;
+    int center = w / 2;
+    float sum = 0.0f;
+    for (int i = 0; i < w; i++) {
+        for (int j = 0; j < w; j++) {
+            float x = j - center;
+            float y = i - center;
+            kernel(i, j) = (1.0f / (2.0f * CV_PI * sigma * sigma)) * exp(-(x * x + y * y) / (2.0f * sigma * sigma));
+            sum += kernel(i, j);
+        }
+    }
+    for (int i = 0; i < w; i++) {
+        for (int j = 0; j < w; j++) {
+            kernel(i, j) /= sum;
+        }
+    }
+    return kernel;
+}
+
+Mat_<uchar> applyGaussian2D(Mat_<float> kernel, Mat_<uchar> img, int w) {
+    Mat_<uchar> result(img.rows, img.cols);
+
+    for (int i = 0; i < img.rows; i++) {
+        for (int j = 0; j < img.cols; j++) {
+            float sum = 0.0f;
+            for (int u = 0; u < w; u++) {
+                for (int v = 0; v < w; v++) {
+                    int i2 = i + u - w / 2;
+                    int j2 = j + v - w / 2;
+                    if (isInside(img, i2, j2)) {
+                        sum += img(i2, j2) * kernel(u, v);
+                    }
+                }
+            }
+            result(i, j) = saturate((int)round(sum));
+        }
+    }
+    return result;
+}
+
+
+void Gaussian_2D(Mat_<uchar> img) {
+    int w;
+    cout << "Enter Gaussian kernel size w = 3, 5 or 7: ";
+    cin >> w;
+    Mat_<float> kernel = createGaussianKernel2D(w);
+    double t = (double)getTickCount();
+    Mat_<uchar> result = applyGaussian2D(kernel, img, w);
+    t = ((double)getTickCount() - t) / getTickFrequency();
+    cout << "Gaussian 2D time = " << t * 1000 << " ms\n";
+    imshow("Original image", img);
+    imshow("Gaussian 2D filtered image", result);
+    waitKey(0);
+}
+
+void lab11() {
+    int op;
+    do{
+        printf("Menu:\n");
+        printf(" 1 - Gaussian 2D \n");
+        printf(" 0 - Exit\n\n");
+        printf("Option: ");
+        scanf("%d",&op);
+        switch (op)
+        {
+            case 1: {
+                Mat_ <uchar> img2 = imread("PI-L10/portrait_Gauss2.bmp", IMREAD_GRAYSCALE);
+                Gaussian_2D(img2);
+                Mat_ <uchar> img = imread("PI-L10/balloons_Gauss.bmp", IMREAD_GRAYSCALE);
+                Gaussian_2D(img);
+                break;
+            }
+
+        }
+    }
+    while (op!=0);
+}
+
 void negative_image(){
     Mat_<uchar> img = imread("Images/cameraman.bmp",
      IMREAD_GRAYSCALE);
@@ -2372,6 +2453,7 @@ int main(){
         printf(" 8 - Lab8 \n");
         printf(" 9 - Lab9 \n");
         printf(" 10 - Lab10 \n");
+        printf(" 11 - Lab11 \n");
         printf(" 15 - Project \n");
         printf(" 0 - Exit\n\n");
         printf("Option: ");
@@ -2407,6 +2489,9 @@ int main(){
                 break;
             case 10:
                 lab10();
+                break;
+            case 11:
+                lab11();
                 break;
             // case 15:
             //     project();
