@@ -2589,7 +2589,154 @@ Mat_<float> nonMaximaSuppression(Mat_<float> magnitude, Mat_<uchar> q)
     }
     return thinnedMag;
 }
+Mat_<uchar> scaleSobelMagnitude(Mat_<float> mag)
+{
+    Mat_<uchar> result(mag.rows, mag.cols);
+    result.setTo(0);
+    float scale = 4.0f * sqrt(2.0f);
+    for (int i = 0; i < mag.rows; i++)
+    {
+        for (int j = 0; j < mag.cols; j++)
+        {
+            int value = (int)(mag(i, j) / scale);
+            if (value > 255)
+            {
+                value = 255;
+            }
+            if (value < 0)
+            {
+                value = 0;
+            }
+            result(i, j) = (uchar)value;
+        }
+    }
+    return result;
+}
+Mat_<float> adaptiveThresholdResult(Mat_<float> thinnedMag, float threshold)
+{
+    Mat_<float> result(thinnedMag.rows, thinnedMag.cols);
+    result.setTo(0);
+    for (int i = 0; i < thinnedMag.rows; i++)
+    {
+        for (int j = 0; j < thinnedMag.cols; j++)
+        {
+            if (thinnedMag(i, j) >= threshold)
+            {
+                result(i, j) = 255.0f;
+            }
+            else
+            {
+                result(i, j) = 0.0f;
+            }
+        }
+    }
+    return result;
+}
+float adaptiveThresholding(Mat_<float> thinnedMag, float p)
+{
+    vector<int> hist(256, 0);
+    float scale = 4.0f * sqrt(2.0f);
+    for (int i = 0; i < thinnedMag.rows; i++)
+    {
+        for (int j = 0; j < thinnedMag.cols; j++)
+        {
+            int value = (int)(thinnedMag(i, j) / scale);
+            if (value > 255)
+            {
+                value = 255;
+            }
+            if (value < 0)
+            {
+                value = 0;
+            }
+            hist[value]++;
+        }
+    }
+    int noNonEdge = (int)((1.0-p) * (thinnedMag.rows * thinnedMag.cols - hist[0]));
+    int sum = 0;
+    int thresholdScaled = 0;
+    for (int i = 1; i < 256; i++)
+    {
+        sum = sum + hist[i];
+        if (sum > noNonEdge)
+        {
+            thresholdScaled = i;
+            break;
+        }
+    }
+    float threshold = thresholdScaled * scale;
+    return threshold;
+}
 
+Mat_<float> hysteresisThresholding(Mat_<float> thinnedMag, float thresholdHigh, float k)
+{
+    Mat_<float> result(thinnedMag.rows, thinnedMag.cols);
+    result.setTo(0);
+    float thresholdLow = k * thresholdHigh;
+    for (int i = 0; i < thinnedMag.rows; i++)
+    {
+        for (int j = 0; j < thinnedMag.cols; j++)
+        {
+            if (thinnedMag(i, j) >= thresholdHigh)
+            {
+                result(i, j) = 255.0f; // strong edge
+            }
+            else if (thinnedMag(i, j) >= thresholdLow)
+            {
+                result(i, j) = 128.0f; // weak edge
+            }
+            else
+            {
+                result(i, j) = 0.0f; // non edge
+            }
+        }
+    }
+    return result;
+}
+
+Mat_<float> edgeExtensionHysteresis(Mat_<float> edges)
+{
+    Mat_<float> result = edges.clone();
+    queue<Point> Q;
+    int di[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
+    int dj[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
+    for (int i = 0; i < result.rows; i++)
+    {
+        for (int j = 0; j < result.cols; j++)
+        {
+            if (result(i, j) == 255.0f)
+            {
+                Q.push(Point(j, i));
+            }
+        }
+    }
+    while (!Q.empty())
+    {
+        Point current = Q.front();
+        Q.pop();
+        for (int d = 0; d < 8; d++)
+        {
+            int ni = current.y + di[d];
+            int nj = current.x + dj[d];
+            if (isInside(result, ni, nj) && result(ni, nj) == 128.0f)
+            {
+                result(ni, nj) = 255.0f;
+                Q.push(Point(nj, ni));
+            }
+        }
+    }
+    for (int i = 0; i < result.rows; i++)
+    {
+        for (int j = 0; j < result.cols; j++)
+        {
+            if (result(i, j) == 128.0f)
+            {
+                result(i, j) = 0.0f;
+            }
+        }
+    }
+    return result;
+}
 void cannyGradientStep()
 {
     Mat_<uchar> img = imread("PI-L11/cameraman.bmp", IMREAD_GRAYSCALE);
@@ -2599,17 +2746,34 @@ void cannyGradientStep()
     Mat_<float> dx = sobelX(gaussian);
     Mat_<float> dy = sobelY(gaussian);
 
-    Mat_<float> magnitude = gradientMagnitude(dx,dy);
-    Mat_<float> gradient = gradientDirection(dx,dy);
+    Mat_<float> magnitude = gradientMagnitude(dx, dy);
+    Mat_<float> gradient = gradientDirection(dx, dy);
+
     Mat_<uchar> q = computeQ(gradient);
+
     Mat_<float> thinnedMag = nonMaximaSuppression(magnitude, q);
 
+    float p = 0.1f;
+    float k = 0.4f;
+
+    float thresholdHigh = adaptiveThresholding(thinnedMag, p);
+
+    cout << "Threshold high: " << thresholdHigh << endl;
+    cout << "Threshold low: " << k * thresholdHigh << endl;
+    float scale = 4.0f * sqrt(2.0f);
+    cout << "Threshold high scaled: " << thresholdHigh / scale << endl;
+    cout << "Threshold low scaled: " << (k * thresholdHigh) / scale << endl;
+
+    Mat_<float> hysteresisImage = hysteresisThresholding(thinnedMag, thresholdHigh, k);
+    Mat_<float> finalEdges = edgeExtensionHysteresis(hysteresisImage);
 
     imshow("Initial image", img);
     imshow("Gaussian image", gaussian);
-    imshow("dx", dx/255);
-    imshow("dy", dy/255);
-    imshow("thinnedmag", thinnedMag/255);
+    imshow("dx", dx / 255);
+    imshow("dy", dy / 255);
+    imshow("thinnedMag", thinnedMag / 255);
+    imshow("Strong and weak edges", hysteresisImage / 255);
+    imshow("Final Canny edges", finalEdges / 255);
 
     waitKey(0);
 }
@@ -4358,7 +4522,7 @@ void printFace(ComponentInfo face)
 void project()
 {
     string filename;
-    filename = "Project/alb.bmp";
+    filename = "Project/portocaliu.bmp";
     Mat_<Vec3b> img = imread(filename);
 
     Mat_<uchar> H, S, V;
