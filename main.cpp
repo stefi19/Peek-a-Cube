@@ -2443,6 +2443,181 @@ void lab11() {
     while (op!=0);
 }
 
+Mat_<uchar> applyGaussianForCanny(Mat_<uchar> img)
+{
+    int w = 3; //sigma = w/6
+    Mat_<float> Gx = createGaussianKernelGx(w);
+    Mat_<float> Gy = createGaussianKernelGy(w);
+    Mat_<uchar> result = applyGaussian1D(img, w, Gx, Gy);
+    return result;
+}
+
+Mat_<float> sobelX(Mat_<uchar> img)
+{
+    Mat_<float> result(img.rows, img.cols);
+    result.setTo(0);
+    int kernel[3][3] = {
+        {-1, 0, 1},
+        {-2, 0, 2},
+        {-1, 0, 1}
+    };
+    for (int i = 1; i < img.rows - 1; i++)
+    {
+        for (int j = 1; j < img.cols - 1; j++)
+        {
+            float sum = 0;
+            for (int u = 0; u < 3; u++)
+            {
+                for (int v = 0; v < 3; v++)
+                {
+                    int x = i + u - 1;
+                    int y = j + v - 1;
+                    sum = sum + img(x, y) * kernel[u][v];
+                }
+            }
+            result(i, j) = sum;
+        }
+    }
+    return result;
+}
+
+Mat_<float> sobelY(Mat_<uchar> img)
+{
+    Mat_<float> result(img.rows, img.cols);
+    result.setTo(0);
+    int kernel[3][3] = {
+        {1, 2, 1},
+        { 0,  0,  0},
+        { -1,  -2,  -1}
+    };
+    for (int i = 1; i < img.rows - 1; i++)
+    {
+        for (int j = 1; j < img.cols - 1; j++)
+        {
+            float sum = 0;
+            for (int u = 0; u < 3; u++)
+            {
+                for (int v = 0; v < 3; v++)
+                {
+                    int x = i + u - 1;
+                    int y = j + v - 1;
+                    sum = sum + img(x, y) * kernel[u][v];
+                }
+            }
+            result(i, j) = sum;
+        }
+    }
+    return result;
+}
+
+Mat_<float> gradientMagnitude(Mat_<float> dx, Mat_<float> dy)
+{
+    Mat_<float> result(dx.rows, dx.cols);
+    result.setTo(0);
+    for (int i = 0; i < dx.rows; i++)
+    {
+        for (int j = 0; j < dx.cols; j++)
+        {
+            result(i, j) = sqrt(dx(i, j) * dx(i, j) + dy(i, j) * dy(i, j));
+        }
+    }
+    return result;
+}
+Mat_<float> gradientDirection(Mat_<float> dx, Mat_<float> dy)
+{
+    Mat_<float> result(dx.rows, dx.cols);
+    result.setTo(0);
+    for (int i = 0; i < dx.rows; i++)
+    {
+        for (int j = 0; j < dx.cols; j++)
+        {
+            result(i, j) = atan2(dy(i, j), dx(i, j));
+        }
+    }
+    return result;
+}
+
+Mat_<uchar> computeQ(Mat_<float> direction)
+{
+    Mat_<uchar> q(direction.rows, direction.cols);
+    q.setTo(0);
+    for (int i = 0; i < direction.rows; i++)
+    {
+        for (int j = 0; j < direction.cols; j++)
+        {
+            float phi = direction(i, j);
+            if (phi < 0)
+            {
+                phi = phi + 2 * CV_PI;
+            }
+            int value = (int)(phi * 8.0f / (2.0f * CV_PI) + 0.5f);
+            q(i, j) = value % 8;
+        }
+    }
+    return q;
+}
+
+Mat_<float> nonMaximaSuppression(Mat_<float> magnitude, Mat_<uchar> q)
+{
+    Mat_<float> thinnedMag(magnitude.rows, magnitude.cols);
+    thinnedMag.setTo(0);
+    int di[8] = {0, -1, -1, -1, 0, 1, 1, 1};
+    int dj[8] = {1, 1, 0, -1, -1, -1, 0, 1};
+    for (int i = 1; i < magnitude.rows - 1; i++)
+    {
+        for (int j = 1; j < magnitude.cols - 1; j++)
+        {
+            int direction = q(i, j);
+            int i1 = i + di[direction];
+            int j1 = j + dj[direction];
+            int i2 = i - di[direction];
+            int j2 = j - dj[direction];
+
+            float current = magnitude(i, j);
+            float neighbor1 = magnitude(i1, j1);
+            float neighbor2 = magnitude(i2, j2);
+
+            if (current >= neighbor1 && current >= neighbor2)
+            {
+                thinnedMag(i, j) = current;
+            }
+            else
+            {
+                thinnedMag(i, j) = 0;
+            }
+        }
+    }
+    return thinnedMag;
+}
+
+void cannyGradientStep()
+{
+    Mat_<uchar> img = imread("PI-L11/cameraman.bmp", IMREAD_GRAYSCALE);
+
+    Mat_<uchar> gaussian = applyGaussianForCanny(img);
+
+    Mat_<float> dx = sobelX(gaussian);
+    Mat_<float> dy = sobelY(gaussian);
+
+    Mat_<float> magnitude = gradientMagnitude(dx,dy);
+    Mat_<float> gradient = gradientDirection(dx,dy);
+    Mat_<uchar> q = computeQ(gradient);
+    Mat_<float> thinnedMag = nonMaximaSuppression(magnitude, q);
+
+
+    imshow("Initial image", img);
+    imshow("Gaussian image", gaussian);
+    imshow("dx", dx/255);
+    imshow("dy", dy/255);
+    imshow("thinnedmag", thinnedMag/255);
+
+    waitKey(0);
+}
+
+void lab12() {
+    cannyGradientStep();
+}
+
 void negative_image(){
     Mat_<uchar> img = imread("Images/cameraman.bmp",
      IMREAD_GRAYSCALE);
@@ -4258,6 +4433,7 @@ int main(){
         printf(" 9 - Lab9 \n");
         printf(" 10 - Lab10 \n");
         printf(" 11 - Lab11 \n");
+        printf(" 12 - Lab12 \n");
         printf(" 15 - Project \n");
         printf(" 0 - Exit\n\n");
         printf("Option: ");
@@ -4296,6 +4472,9 @@ int main(){
                 break;
             case 11:
                 lab11();
+                break;
+            case 12:
+                lab12();
                 break;
             case 15:
                 project();
