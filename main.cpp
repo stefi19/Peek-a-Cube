@@ -3829,7 +3829,7 @@ float outerEdgeScore(Mat_<uchar> edges, Rect box)
     return (float)edgeCount / totalCount;
 }
 
-ComponentInfo findWhiteFaceWithCanny(Mat_<Vec3b> img, Mat_<uchar> H, Mat_<uchar> S, Mat_<uchar> V)
+ComponentInfo findWhiteFaceWithCanny(Mat_<Vec3b> img, Mat_<uchar> H, Mat_<uchar> S, Mat_<uchar> V, bool showCanny = true)
 {
     ComponentInfo bestFace;
 
@@ -3839,7 +3839,9 @@ ComponentInfo findWhiteFaceWithCanny(Mat_<Vec3b> img, Mat_<uchar> H, Mat_<uchar>
     Mat_<uchar> edges;
     Canny(blurredV, edges, 35, 110);
 
-    imshow("White Canny on V channel", edges);
+    if (showCanny) {
+        imshow("White Canny on V channel", edges);
+    }
 
     int minDim = min(img.rows, img.cols);
 
@@ -3852,7 +3854,6 @@ ComponentInfo findWhiteFaceWithCanny(Mat_<Vec3b> img, Mat_<uchar> H, Mat_<uchar>
     int sideStep = 12;
     int step = 8;
 
-    // Cube is usually on the right half in your images.
     int startX = img.cols * 32 / 100;
 
     for (int side = minSide; side <= maxSide; side += sideStep) {
@@ -4019,89 +4020,218 @@ void printFace(ComponentInfo face)
          << " color=" << face.colorName
          << endl;
 }
-
-void project()
+Mat_<Vec3b> processRubikFrame(Mat_<Vec3b> inputImg, bool showDebugWindows, bool printInfo)
 {
-    vector<string> filenames = {
-        "Project/portocaliu.bmp",
-        "Project/rosu.bmp",
-        "Project/galben.bmp",
-        "Project/verde.bmp",
-        "Project/albastru.bmp",
-        "Project/alb.bmp"
-    };
+    Mat_<Vec3b> img = resizeProjectImageIfNeeded(inputImg);
 
-    for (const string& filename : filenames) {
-        cout << "\n===== " << filename << " =====" << endl;
+    Mat_<uchar> H, S, V;
 
-        Mat_<Vec3b> originalImg = imread(filename);
+    Mat_<uchar> coloredMask = buildColoredRubikMask(img, H, S, V);
 
-        if (originalImg.empty()) {
-            cout << "Could not load: " << filename << endl;
-            continue;
-        }
+    Mat_<uchar> strel3 = squareStrel3();
+    Mat_<uchar> strel5 = squareStrel5();
 
-        Mat_<Vec3b> img = resizeProjectImageIfNeeded(originalImg);
+    Mat_<uchar> cleanColoredMask = openingOp(coloredMask, strel3);
+    cleanColoredMask = closingOp(cleanColoredMask, strel5);
 
-        Mat_<uchar> H, S, V;
+    Mat_<int> coloredLabels(cleanColoredMask.rows, cleanColoredMask.cols, 0);
+    bfs_connected_components(cleanColoredMask, coloredLabels, true);
 
-        Mat_<uchar> coloredMask = buildColoredRubikMask(img, H, S, V);
+    vector<ComponentInfo> coloredComponents =
+        extractComponentsFromLabels(coloredLabels, H, S, V, img);
 
-        Mat_<uchar> strel3 = squareStrel3();
-        Mat_<uchar> strel5 = squareStrel5();
+    ComponentInfo face = findBestComponentFace(coloredComponents, img.size(), false);
 
-        Mat_<uchar> cleanColoredMask = openingOp(coloredMask, strel3);
-        cleanColoredMask = closingOp(cleanColoredMask, strel5);
+    bool usedWhiteCanny = false;
 
-        Mat_<int> coloredLabels(cleanColoredMask.rows, cleanColoredMask.cols, 0);
-        bfs_connected_components(cleanColoredMask, coloredLabels, true);
+    if (face.area == 0) {
+        face = findWhiteFaceWithCanny(img, H, S, V, showDebugWindows);
+        usedWhiteCanny = true;
+    }
 
-        vector<ComponentInfo> coloredComponents =
-            extractComponentsFromLabels(coloredLabels, H, S, V, img);
+    if (face.area > 0 && face.colorName != "WHITE") {
+        face.colorName = dominantColorInsideBox(img, H, S, V, face.bbox);
+    }
 
-        ComponentInfo face = findBestComponentFace(coloredComponents, img.size(), false);
+    Mat_<Vec3b> result = drawFaceAndSimpleGrid(img, face);
 
-        bool usedWhiteCanny = false;
-
-        if (face.area == 0) {
-            cout << "No colored face found. Trying white with Canny on V channel..." << endl;
-
-            face = findWhiteFaceWithCanny(img, H, S, V);
-            usedWhiteCanny = true;
-
-            if (face.area > 0) {
-                cout << "White face found with Canny." << endl;
-            }
-            else {
-                cout << "No white face found with Canny." << endl;
-            }
-        }
-
-        if (face.area > 0 && face.colorName != "WHITE") {
-            face.colorName = dominantColorInsideBox(img, H, S, V, face.bbox);
-        }
-
-        Mat_<Vec3b> result = drawFaceAndSimpleGrid(img, face);
-
-        if (!usedWhiteCanny) {
-            printComponents("Colored components", coloredComponents);
-
-            imshow("5 Colored mask", coloredMask);
-            imshow("6 Clean colored mask", cleanColoredMask);
-            displayLabels(coloredLabels, "7 Colored connected components");
-        }
-
-        printFace(face);
-
+    if (showDebugWindows) {
         imshow("1 Original resized", img);
         imshow("2 H channel", H);
         imshow("3 S channel", S);
         imshow("4 V channel", V);
-        imshow("8 Detected face and simple 3x3 grid", result);
 
-        waitKey(0);
-        destroyAllWindows();
+        if (!usedWhiteCanny) {
+            imshow("5 Colored mask", coloredMask);
+            imshow("6 Clean colored mask", cleanColoredMask);
+            displayLabels(coloredLabels, "7 Colored connected components");
+        }
     }
+
+    if (printInfo) {
+        if (!usedWhiteCanny) {
+            printComponents("Colored components", coloredComponents);
+        }
+
+        printFace(face);
+    }
+
+    return result;
+}
+bool tryOpenCamera(VideoCapture& cap)
+{
+    vector<int> cameraIndexes = {0, 1, 2, 3};
+    vector<int> backends = {CAP_AVFOUNDATION, CAP_ANY};
+
+    for (int backend : backends) {
+        for (int index : cameraIndexes) {
+            cout << "Trying camera index " << index << " with backend " << backend << endl;
+
+            cap.open(index, backend);
+
+            if (!cap.isOpened()) {
+                cap.release();
+                continue;
+            }
+
+            cap.set(CAP_PROP_FRAME_WIDTH, 640);
+            cap.set(CAP_PROP_FRAME_HEIGHT, 480);
+            cap.set(CAP_PROP_FPS, 30);
+
+            // Camera warm-up. Some webcams return empty frames at first.
+            Mat frame;
+
+            for (int k = 0; k < 30; k++) {
+                cap.read(frame);
+                waitKey(30);
+
+                if (!frame.empty()) {
+                    cout << "Camera works with index " << index << endl;
+                    return true;
+                }
+            }
+
+            cout << "Camera opened, but no valid frames." << endl;
+            cap.release();
+        }
+    }
+
+    return false;
+}
+
+bool readValidFrame(VideoCapture& cap, Mat& frame)
+{
+    for (int k = 0; k < 10; k++) {
+        cap.read(frame);
+
+        if (!frame.empty()) {
+            return true;
+        }
+
+        waitKey(20);
+    }
+
+    return false;
+}
+void project()
+{
+    int op;
+
+    do {
+        cout << "\nPROJECT MENU:" << endl;
+        cout << "1 - Run on images from Project/ folder" << endl;
+        cout << "2 - Open camera and detect live" << endl;
+        cout << "0 - Exit project" << endl;
+        cout << "Option: ";
+        cin >> op;
+
+        switch (op) {
+            case 1:
+            {
+                vector<string> filenames = {
+                    "Project/portocaliu.bmp",
+                    "Project/rosu.bmp",
+                    "Project/galben.bmp",
+                    "Project/verde.bmp",
+                    "Project/albastru.bmp",
+                    "Project/alb.bmp"
+                };
+
+                for (const string& filename : filenames) {
+                    cout << "\n===== " << filename << " =====" << endl;
+
+                    Mat_<Vec3b> img = imread(filename);
+
+                    if (img.empty()) {
+                        cout << "Could not load: " << filename << endl;
+                        continue;
+                    }
+
+                    Mat_<Vec3b> result = processRubikFrame(img, true, true);
+
+                    imshow("8 Detected face and simple 3x3 grid", result);
+
+                    waitKey(0);
+                    destroyAllWindows();
+                }
+
+                break;
+            }
+
+            case 2:
+            {
+                VideoCapture cap;
+
+                if (!tryOpenCamera(cap)) {
+                    cout << "Could not open a working camera." << endl;
+                    cout << "Check macOS camera permission for CLion / Terminal." << endl;
+                    break;
+                }
+
+                cout << "Camera opened." << endl;
+                cout << "Press ESC or q to exit live mode." << endl;
+
+                while (true) {
+                    Mat frame;
+
+                    if (!readValidFrame(cap, frame)) {
+                        cout << "Could not read valid frame from camera." << endl;
+                        break;
+                    }
+
+                    Mat_<Vec3b> img = frame;
+
+                    Mat_<Vec3b> result = processRubikFrame(img, false, false);
+
+                    imshow("Live Rubik detection", result);
+
+                    char key = (char)waitKey(1);
+
+                    if (key == 27 || key == 'q' || key == 'Q') {
+                        break;
+                    }
+                }
+
+                cap.release();
+                destroyAllWindows();
+
+                break;
+            }
+
+            case 0:
+            {
+                cout << "Exit project." << endl;
+                break;
+            }
+
+            default:
+            {
+                cout << "Invalid option." << endl;
+                break;
+            }
+        }
+
+    } while (op != 0);
 }
 
 int main(){
