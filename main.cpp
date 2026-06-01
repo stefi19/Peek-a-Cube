@@ -2442,71 +2442,106 @@ void lab11() {
     }
     while (op!=0);
 }
+const float STRONG_EDGE = 255.0f;
+const float WEAK_EDGE = 128.0f;
+const float NON_EDGE = 0.0f;
+const float SOBEL_SCALE = 4.0f * sqrt(2.0f);
 
-Mat_<uchar> applyGaussianForCanny(Mat_<uchar> img)
+bool isInsideFloat(const Mat_<float>& img, int i, int j)
 {
-    int w = 3; //sigma = w/6
-    Mat_<float> Gx = createGaussianKernelGx(w);
-    Mat_<float> Gy = createGaussianKernelGy(w);
-    Mat_<uchar> result = applyGaussian1D(img, w, Gx, Gy);
-    return result;
+    return i >= 0 && i < img.rows && j >= 0 && j < img.cols;
 }
 
-Mat_<float> sobelX(Mat_<uchar> img)
+Mat_<float> applyGaussianForCanny(Mat_<uchar> img)
+{
+    int w = 3; // sigma = w / 6 = 0.5
+
+    Mat_<float> Gx = createGaussianKernelGx(w);
+    Mat_<float> Gy = createGaussianKernelGy(w);
+
+    Mat_<uchar> gaussianUchar = applyGaussian1D(img, w, Gx, Gy);
+
+    Mat_<float> gaussian(gaussianUchar.rows, gaussianUchar.cols);
+    gaussian.setTo(0);
+
+    for (int i = 0; i < gaussianUchar.rows; i++)
+    {
+        for (int j = 0; j < gaussianUchar.cols; j++)
+        {
+            gaussian(i, j) = (float)gaussianUchar(i, j);
+        }
+    }
+
+    return gaussian;
+}
+
+Mat_<float> sobelX(Mat_<float> img)
 {
     Mat_<float> result(img.rows, img.cols);
     result.setTo(0);
+
     int kernel[3][3] = {
         {-1, 0, 1},
         {-2, 0, 2},
         {-1, 0, 1}
     };
+
     for (int i = 1; i < img.rows - 1; i++)
     {
         for (int j = 1; j < img.cols - 1; j++)
         {
-            float sum = 0;
+            float sum = 0.0f;
+
             for (int u = 0; u < 3; u++)
             {
                 for (int v = 0; v < 3; v++)
                 {
                     int x = i + u - 1;
                     int y = j + v - 1;
-                    sum = sum + img(x, y) * kernel[u][v];
+
+                    sum += img(x, y) * kernel[u][v];
                 }
             }
+
             result(i, j) = sum;
         }
     }
+
     return result;
 }
 
-Mat_<float> sobelY(Mat_<uchar> img)
+Mat_<float> sobelY(Mat_<float> img)
 {
     Mat_<float> result(img.rows, img.cols);
     result.setTo(0);
+
     int kernel[3][3] = {
-        {1, 2, 1},
+        { 1,  2,  1},
         { 0,  0,  0},
-        { -1,  -2,  -1}
+        {-1, -2, -1}
     };
+
     for (int i = 1; i < img.rows - 1; i++)
     {
         for (int j = 1; j < img.cols - 1; j++)
         {
-            float sum = 0;
+            float sum = 0.0f;
+
             for (int u = 0; u < 3; u++)
             {
                 for (int v = 0; v < 3; v++)
                 {
                     int x = i + u - 1;
                     int y = j + v - 1;
-                    sum = sum + img(x, y) * kernel[u][v];
+
+                    sum += img(x, y) * kernel[u][v];
                 }
             }
+
             result(i, j) = sum;
         }
     }
+
     return result;
 }
 
@@ -2514,6 +2549,7 @@ Mat_<float> gradientMagnitude(Mat_<float> dx, Mat_<float> dy)
 {
     Mat_<float> result(dx.rows, dx.cols);
     result.setTo(0);
+
     for (int i = 0; i < dx.rows; i++)
     {
         for (int j = 0; j < dx.cols; j++)
@@ -2521,12 +2557,15 @@ Mat_<float> gradientMagnitude(Mat_<float> dx, Mat_<float> dy)
             result(i, j) = sqrt(dx(i, j) * dx(i, j) + dy(i, j) * dy(i, j));
         }
     }
+
     return result;
 }
+
 Mat_<float> gradientDirection(Mat_<float> dx, Mat_<float> dy)
 {
     Mat_<float> result(dx.rows, dx.cols);
     result.setTo(0);
+
     for (int i = 0; i < dx.rows; i++)
     {
         for (int j = 0; j < dx.cols; j++)
@@ -2534,6 +2573,7 @@ Mat_<float> gradientDirection(Mat_<float> dx, Mat_<float> dy)
             result(i, j) = atan2(dy(i, j), dx(i, j));
         }
     }
+
     return result;
 }
 
@@ -2541,19 +2581,36 @@ Mat_<uchar> computeQ(Mat_<float> direction)
 {
     Mat_<uchar> q(direction.rows, direction.cols);
     q.setTo(0);
+
+    int mapToFourRegions[8] = {
+        2, // 0 degrees
+        1, // 45 degrees
+        0, // 90 degrees
+        3, // 135 degrees
+        2, // 180 degrees
+        1, // 225 degrees
+        0, // 270 degrees
+        3  // 315 degrees
+    };
+
     for (int i = 0; i < direction.rows; i++)
     {
         for (int j = 0; j < direction.cols; j++)
         {
             float phi = direction(i, j);
+
             if (phi < 0)
             {
-                phi = phi + 2 * CV_PI;
+                phi += 2.0f * CV_PI;
             }
-            int value = (int)(phi * 8.0f / (2.0f * CV_PI) + 0.5f);
-            q(i, j) = value % 8;
+
+            int sector = (int)(phi * 8.0f / (2.0f * CV_PI) + 0.5f);
+            sector = sector % 8;
+
+            q(i, j) = mapToFourRegions[sector];
         }
     }
+
     return q;
 }
 
@@ -2561,136 +2618,177 @@ Mat_<float> nonMaximaSuppression(Mat_<float> magnitude, Mat_<uchar> q)
 {
     Mat_<float> thinnedMag(magnitude.rows, magnitude.cols);
     thinnedMag.setTo(0);
-    int di[8] = {0, -1, -1, -1, 0, 1, 1, 1};
-    int dj[8] = {1, 1, 0, -1, -1, -1, 0, 1};
+
     for (int i = 1; i < magnitude.rows - 1; i++)
     {
         for (int j = 1; j < magnitude.cols - 1; j++)
         {
-            int direction = q(i, j);
-            int i1 = i + di[direction];
-            int j1 = j + dj[direction];
-            int i2 = i - di[direction];
-            int j2 = j - dj[direction];
-
             float current = magnitude(i, j);
-            float neighbor1 = magnitude(i1, j1);
-            float neighbor2 = magnitude(i2, j2);
+            float neighbor1 = 0.0f;
+            float neighbor2 = 0.0f;
 
-            if (current >= neighbor1 && current >= neighbor2)
+            if (q(i, j) == 0)
+            {
+                // vertical: compare up and down
+                neighbor1 = magnitude(i - 1, j);
+                neighbor2 = magnitude(i + 1, j);
+            }
+            else if (q(i, j) == 1)
+            {
+                // diagonal 45 / 225: compare NE and SW
+                neighbor1 = magnitude(i - 1, j + 1);
+                neighbor2 = magnitude(i + 1, j - 1);
+            }
+            else if (q(i, j) == 2)
+            {
+                // horizontal: compare left and right
+                neighbor1 = magnitude(i, j - 1);
+                neighbor2 = magnitude(i, j + 1);
+            }
+            else if (q(i, j) == 3)
+            {
+                // diagonal 135 / 315: compare NW and SE
+                neighbor1 = magnitude(i - 1, j - 1);
+                neighbor2 = magnitude(i + 1, j + 1);
+            }
+
+            if (current > neighbor1 && current > neighbor2)
             {
                 thinnedMag(i, j) = current;
             }
             else
             {
-                thinnedMag(i, j) = 0;
+                thinnedMag(i, j) = 0.0f;
             }
         }
     }
+
     return thinnedMag;
 }
-Mat_<uchar> scaleSobelMagnitude(Mat_<float> mag)
+
+int scaledSobelValue(float value)
 {
-    Mat_<uchar> result(mag.rows, mag.cols);
+    int scaled = (int)(value / SOBEL_SCALE);
+
+    if (scaled < 0)
+    {
+        scaled = 0;
+    }
+
+    if (scaled > 255)
+    {
+        scaled = 255;
+    }
+
+    return scaled;
+}
+
+Mat_<float> scaleSobelMagnitudeFloat(Mat_<float> mag)
+{
+    Mat_<float> result(mag.rows, mag.cols);
     result.setTo(0);
-    float scale = 4.0f * sqrt(2.0f);
+
     for (int i = 0; i < mag.rows; i++)
     {
         for (int j = 0; j < mag.cols; j++)
         {
-            int value = (int)(mag(i, j) / scale);
-            if (value > 255)
-            {
-                value = 255;
-            }
-            if (value < 0)
-            {
-                value = 0;
-            }
-            result(i, j) = (uchar)value;
+            result(i, j) = (float)scaledSobelValue(mag(i, j));
         }
     }
+
     return result;
 }
+
+float adaptiveThresholding(Mat_<float> thinnedMag, float p)
+{
+    vector<int> hist(256, 0);
+
+    for (int i = 0; i < thinnedMag.rows; i++)
+    {
+        for (int j = 0; j < thinnedMag.cols; j++)
+        {
+            int value = scaledSobelValue(thinnedMag(i, j));
+            hist[value]++;
+        }
+    }
+
+    int noNonZeroPixels = thinnedMag.rows * thinnedMag.cols - hist[0];
+
+    if (noNonZeroPixels == 0)
+    {
+        return 0.0f;
+    }
+
+    int noNonEdge = (int)((1.0f - p) * noNonZeroPixels);
+
+    int sum = 0;
+
+    for (int i = 1; i < 256; i++)
+    {
+        sum += hist[i];
+
+        if (sum > noNonEdge)
+        {
+            return (float)i;
+        }
+    }
+
+    return 255.0f;
+}
+
 Mat_<float> adaptiveThresholdResult(Mat_<float> thinnedMag, float threshold)
 {
     Mat_<float> result(thinnedMag.rows, thinnedMag.cols);
     result.setTo(0);
+
     for (int i = 0; i < thinnedMag.rows; i++)
     {
         for (int j = 0; j < thinnedMag.cols; j++)
         {
-            if (thinnedMag(i, j) >= threshold)
+            int value = scaledSobelValue(thinnedMag(i, j));
+
+            if (value >= threshold)
             {
-                result(i, j) = 255.0f;
+                result(i, j) = STRONG_EDGE;
             }
             else
             {
-                result(i, j) = 0.0f;
+                result(i, j) = NON_EDGE;
             }
         }
     }
+
     return result;
-}
-float adaptiveThresholding(Mat_<float> thinnedMag, float p)
-{
-    vector<int> hist(256, 0);
-    float scale = 4.0f * sqrt(2.0f);
-    for (int i = 0; i < thinnedMag.rows; i++)
-    {
-        for (int j = 0; j < thinnedMag.cols; j++)
-        {
-            int value = (int)(thinnedMag(i, j) / scale);
-            if (value > 255)
-            {
-                value = 255;
-            }
-            if (value < 0)
-            {
-                value = 0;
-            }
-            hist[value]++;
-        }
-    }
-    int noNonEdge = (int)((1.0-p) * (thinnedMag.rows * thinnedMag.cols - hist[0]));
-    int sum = 0;
-    int thresholdScaled = 0;
-    for (int i = 1; i < 256; i++)
-    {
-        sum = sum + hist[i];
-        if (sum > noNonEdge)
-        {
-            thresholdScaled = i;
-            break;
-        }
-    }
-    float threshold = thresholdScaled * scale;
-    return threshold;
 }
 
 Mat_<float> hysteresisThresholding(Mat_<float> thinnedMag, float thresholdHigh, float k)
 {
     Mat_<float> result(thinnedMag.rows, thinnedMag.cols);
     result.setTo(0);
+
     float thresholdLow = k * thresholdHigh;
+
     for (int i = 0; i < thinnedMag.rows; i++)
     {
         for (int j = 0; j < thinnedMag.cols; j++)
         {
-            if (thinnedMag(i, j) >= thresholdHigh)
+            int value = scaledSobelValue(thinnedMag(i, j));
+
+            if (value >= thresholdHigh)
             {
-                result(i, j) = 255.0f; // strong edge
+                result(i, j) = STRONG_EDGE;
             }
-            else if (thinnedMag(i, j) >= thresholdLow)
+            else if (value >= thresholdLow)
             {
-                result(i, j) = 128.0f; // weak edge
+                result(i, j) = WEAK_EDGE;
             }
             else
             {
-                result(i, j) = 0.0f; // non edge
+                result(i, j) = NON_EDGE;
             }
         }
     }
+
     return result;
 }
 
@@ -2698,30 +2796,30 @@ Mat_<float> edgeExtensionHysteresis(Mat_<float> edges)
 {
     Mat_<float> result = edges.clone();
     queue<Point> Q;
-    int di[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
-    int dj[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
+    int di[8] = {-1, -1, -1,  0, 0,  1, 1, 1};
+    int dj[8] = {-1,  0,  1, -1, 1, -1, 0, 1};
     for (int i = 0; i < result.rows; i++)
     {
         for (int j = 0; j < result.cols; j++)
         {
-            if (result(i, j) == 255.0f)
+            if (result(i, j) == STRONG_EDGE)
             {
                 Q.push(Point(j, i));
-            }
-        }
-    }
-    while (!Q.empty())
-    {
-        Point current = Q.front();
-        Q.pop();
-        for (int d = 0; d < 8; d++)
-        {
-            int ni = current.y + di[d];
-            int nj = current.x + dj[d];
-            if (isInside(result, ni, nj) && result(ni, nj) == 128.0f)
-            {
-                result(ni, nj) = 255.0f;
-                Q.push(Point(nj, ni));
+                while (!Q.empty())
+                {
+                    Point current = Q.front();
+                    Q.pop();
+                    for (int d = 0; d < 8; d++)
+                    {
+                        int ni = current.y + di[d];
+                        int nj = current.x + dj[d];
+                        if (isInsideFloat(result, ni, nj) && result(ni, nj) == WEAK_EDGE)
+                        {
+                            result(ni, nj) = STRONG_EDGE;
+                            Q.push(Point(nj, ni));
+                        }
+                    }
+                }
             }
         }
     }
@@ -2729,27 +2827,28 @@ Mat_<float> edgeExtensionHysteresis(Mat_<float> edges)
     {
         for (int j = 0; j < result.cols; j++)
         {
-            if (result(i, j) == 128.0f)
+            if (result(i, j) == WEAK_EDGE)
             {
-                result(i, j) = 0.0f;
+                result(i, j) = NON_EDGE;
             }
         }
     }
     return result;
 }
+
 void cannyGradientStep()
 {
     Mat_<uchar> img = imread("PI-L11/cameraman.bmp", IMREAD_GRAYSCALE);
 
-    Mat_<uchar> gaussian = applyGaussianForCanny(img);
+    Mat_<float> gaussian = applyGaussianForCanny(img);
 
     Mat_<float> dx = sobelX(gaussian);
     Mat_<float> dy = sobelY(gaussian);
 
     Mat_<float> magnitude = gradientMagnitude(dx, dy);
-    Mat_<float> gradient = gradientDirection(dx, dy);
+    Mat_<float> direction = gradientDirection(dx, dy);
 
-    Mat_<uchar> q = computeQ(gradient);
+    Mat_<uchar> q = computeQ(direction);
 
     Mat_<float> thinnedMag = nonMaximaSuppression(magnitude, q);
 
@@ -2757,28 +2856,28 @@ void cannyGradientStep()
     float k = 0.4f;
 
     float thresholdHigh = adaptiveThresholding(thinnedMag, p);
+    float thresholdLow = k * thresholdHigh;
 
     cout << "Threshold high: " << thresholdHigh << endl;
-    cout << "Threshold low: " << k * thresholdHigh << endl;
-    float scale = 4.0f * sqrt(2.0f);
-    cout << "Threshold high scaled: " << thresholdHigh / scale << endl;
-    cout << "Threshold low scaled: " << (k * thresholdHigh) / scale << endl;
+    cout << "Threshold low: " << thresholdLow << endl;
 
+    Mat_<float> adaptiveImage = adaptiveThresholdResult(thinnedMag, thresholdHigh);
     Mat_<float> hysteresisImage = hysteresisThresholding(thinnedMag, thresholdHigh, k);
     Mat_<float> finalEdges = edgeExtensionHysteresis(hysteresisImage);
 
     imshow("Initial image", img);
-    imshow("Gaussian image", gaussian);
-    imshow("dx", dx / 255);
-    imshow("dy", dy / 255);
-    imshow("thinnedMag", thinnedMag / 255);
-    imshow("Strong and weak edges", hysteresisImage / 255);
-    imshow("Final Canny edges", finalEdges / 255);
+    imshow("Gaussian image", gaussian / 255.0f);
+    imshow("Normalized gradient magnitude", scaleSobelMagnitudeFloat(magnitude) / 255.0f);
+    imshow("After non-maxima suppression", scaleSobelMagnitudeFloat(thinnedMag) / 255.0f);
+    imshow("After adaptive thresholding", adaptiveImage / 255.0f);
+    imshow("Strong and weak edges", hysteresisImage / 255.0f);
+    imshow("Final Canny edges", finalEdges / 255.0f);
 
     waitKey(0);
 }
 
-void lab12() {
+void lab12()
+{
     cannyGradientStep();
 }
 
@@ -2917,6 +3016,7 @@ void lab1_main() {
     }
     while (op!=0);
 }
+
 // PROJECT
 
 void splitHSVChannels(Mat_<Vec3b> hsv, Mat_<uchar>& H, Mat_<uchar>& S, Mat_<uchar>& V)
@@ -2944,6 +3044,7 @@ struct ComponentInfo {
 
     float aspect = 0.0f;
     float thinness = 0.0f;
+    float bboxDensity = 0.0f;
 
     int meanH = 0;
     int meanS = 0;
@@ -2963,6 +3064,13 @@ Mat_<uchar> squareStrel3()
     return strel;
 }
 
+Mat_<uchar> squareStrel5()
+{
+    Mat_<uchar> strel(5, 5);
+    strel.setTo(0);
+    return strel;
+}
+
 Mat_<uchar> openingOp(Mat_<uchar> src, Mat_<uchar> strel)
 {
     Mat_<uchar> eroded = erotion(src, strel);
@@ -2977,50 +3085,193 @@ Mat_<uchar> closingOp(Mat_<uchar> src, Mat_<uchar> strel)
     return closed;
 }
 
-bool isSkinLikeHSV(int H, int S, int V)
+Mat_<Vec3b> resizeProjectImageIfNeeded(Mat_<Vec3b> img)
 {
-    bool skinHue = (H >= 0 && H <= 35);
-    bool skinSaturation = (S >= 18 && S <= 135);
-    bool skinValue = (V >= 65);
+    int maxDim = max(img.rows, img.cols);
 
-    return skinHue && skinSaturation && skinValue;
+    if (maxDim <= 900) {
+        return img;
+    }
+
+    float scale = 900.0f / maxDim;
+
+    Mat_<Vec3b> resized;
+    resize(img, resized, Size(), scale, scale, INTER_AREA);
+
+    cout << "Image resized from "
+         << img.cols << "x" << img.rows
+         << " to "
+         << resized.cols << "x" << resized.rows
+         << endl;
+
+    return resized;
 }
 
-bool isWarmSkinWhitePixel(int H, int S, int V, int R, int G, int B)
+bool isSkinPixel(int H, int S, int V, int R, int G, int B)
 {
-    bool lowSatWarm =
-        S <= 85 &&
-        V >= 90 &&
-        H <= 38 &&
-        R > G + 4 &&
-        R > B + 10 &&
-        G >= B - 5;
+    if (V < 45) {
+        return false;
+    }
 
-    return lowSatWarm;
+    float gRatio = 0.0f;
+    float bRatio = 0.0f;
+
+    if (R > 0) {
+        gRatio = (float)G / (float)R;
+        bRatio = (float)B / (float)R;
+    }
+
+    bool hueSkin = H >= 0 && H <= 35;
+
+    bool rgbSkin =
+        R > 70 &&
+        G > 45 &&
+        B > 25 &&
+        R >= G &&
+        G >= B - 5 &&
+        R > B + 15;
+
+    bool ratioSkin =
+        gRatio >= 0.48f &&
+        gRatio <= 0.95f &&
+        bRatio >= 0.25f &&
+        bRatio <= 0.85f;
+
+    bool saturationSkin = S >= 15 && S <= 135;
+
+    return hueSkin && rgbSkin && ratioSkin && saturationSkin;
 }
 
 bool isWhiteRubikPixel(int H, int S, int V, int R, int G, int B)
 {
-    // S important
-    // alb = saturatie mica + luminozitate mare + RGB echilibrat.
-    if (isWarmSkinWhitePixel(H, S, V, R, G, B)) {
-        return false;
-    }
-
-    bool lowSaturation = S <= 62;
+    int maxRGB = max(R, max(G, B));
+    int minRGB = min(R, min(G, B));
 
     bool brightEnough =
-        V >= 118 &&
-        R >= 108 &&
-        G >= 108 &&
-        B >= 108;
+        V >= 105 &&
+        maxRGB >= 115 &&
+        R >= 85 &&
+        G >= 85 &&
+        B >= 85;
 
-    bool balancedRGB =
-        abs(R - G) <= 48 &&
-        abs(R - B) <= 58 &&
-        abs(G - B) <= 58;
+    bool lowSaturation = S <= 85;
+    bool balancedRGB = maxRGB - minRGB <= 75;
 
-    return lowSaturation && brightEnough && balancedRGB;
+    bool notSkin = !isSkinPixel(H, S, V, R, G, B);
+
+    return brightEnough && lowSaturation && balancedRGB && notSkin;
+}
+
+bool isYellowRubikPixel(int H, int S, int V, int R, int G, int B)
+{
+    float gRatio = 0.0f;
+    float bRatio = 0.0f;
+
+    if (R > 0) {
+        gRatio = (float)G / (float)R;
+        bRatio = (float)B / (float)R;
+    }
+
+    bool hueOK = H >= 28 && H <= 82;
+
+    bool rgbOK =
+        R >= 95 &&
+        G >= 90 &&
+        B <= 170 &&
+        R > B + 30 &&
+        G > B + 30;
+
+    bool ratioOK =
+        gRatio >= 0.70f &&
+        gRatio <= 1.20f &&
+        bRatio <= 0.70f;
+
+    bool satOK = S >= 45 && V >= 70;
+
+    return hueOK && rgbOK && ratioOK && satOK;
+}
+
+bool isOrangeRubikPixel(int H, int S, int V, int R, int G, int B)
+{
+    float gRatio = 0.0f;
+    float bRatio = 0.0f;
+
+    if (R > 0) {
+        gRatio = (float)G / (float)R;
+        bRatio = (float)B / (float)R;
+    }
+
+    bool hueOK = H >= 7 && H <= 45;
+
+    bool rgbOK =
+        R >= 90 &&
+        G >= 40 &&
+        R > G + 5 &&
+        R > B + 22 &&
+        G > B + 5;
+
+    bool ratioOK =
+        gRatio >= 0.43f &&
+        gRatio <= 0.93f &&
+        bRatio <= 0.78f;
+
+    bool satOK = S >= 55 && V >= 45;
+
+    return hueOK && rgbOK && ratioOK && satOK;
+}
+
+bool isRedRubikPixel(int H, int S, int V, int R, int G, int B)
+{
+    float gRatio = 0.0f;
+    float bRatio = 0.0f;
+
+    if (R > 0) {
+        gRatio = (float)G / (float)R;
+        bRatio = (float)B / (float)R;
+    }
+
+    bool hueOK = H <= 14 || H >= 240;
+
+    bool rgbOK =
+        R >= 85 &&
+        R > G + 25 &&
+        R > B + 25;
+
+    bool ratioOK =
+        gRatio <= 0.62f &&
+        bRatio <= 0.85f;
+
+    bool satOK = S >= 55 && V >= 45;
+
+    return hueOK && rgbOK && ratioOK && satOK;
+}
+
+bool isGreenRubikPixel(int H, int S, int V, int R, int G, int B)
+{
+    bool hueOK = H >= 65 && H <= 155;
+
+    bool rgbOK =
+        G >= 55 &&
+        G > R + 8 &&
+        G > B + 3;
+
+    bool satOK = S >= 45 && V >= 45;
+
+    return hueOK && rgbOK && satOK;
+}
+
+bool isBlueRubikPixel(int H, int S, int V, int R, int G, int B)
+{
+    bool hueOK = H >= 110 && H <= 235;
+
+    bool rgbOK =
+        B >= 50 &&
+        B > R + 8 &&
+        B >= G - 10;
+
+    bool satOK = S >= 40 && V >= 35;
+
+    return hueOK && rgbOK && satOK;
 }
 
 string classifyRubikColor(int H, int S, int V, int R, int G, int B)
@@ -3029,165 +3280,61 @@ string classifyRubikColor(int H, int S, int V, int R, int G, int B)
         return "WHITE";
     }
 
-    float gRatio = 0.0f;
-    float bRatio = 0.0f;
-
-    if (R > 0) {
-        gRatio = (float)G / (float)R;
-        bRatio = (float)B / (float)R;
-    }
-
-    bool red =
-        R >= 115 &&
-        R > G + 40 &&
-        R > B + 35 &&
-        gRatio <= 0.43f &&
-        (H <= 16 || H >= 235);
-
-    if (red) {
-        return "RED";
-    }
-
-    bool orange =
-        R >= 115 &&
-        G >= 45 &&
-        B <= 165 &&
-        gRatio > 0.43f &&
-        gRatio <= 0.95f &&
-        bRatio <= 0.80f &&
-        R > B + 18 &&
-        H <= 68;
-
-    if (orange) {
-        return "ORANGE";
-    }
-
-    bool yellow =
-        R >= 120 &&
-        G >= 110 &&
-        B <= 170 &&
-        abs(R - G) <= 105 &&
-        H > 35 &&
-        H <= 88;
-
-    if (yellow) {
+    if (isYellowRubikPixel(H, S, V, R, G, B)) {
         return "YELLOW";
     }
 
-    bool green =
-        G >= 75 &&
-        G > R + 5 &&
-        G > B + 5 &&
-        H > 58 &&
-        H <= 145;
+    // Important: orange before red, because orange was detected as red.
+    if (isOrangeRubikPixel(H, S, V, R, G, B)) {
+        return "ORANGE";
+    }
 
-    if (green) {
+    if (isRedRubikPixel(H, S, V, R, G, B)) {
+        return "RED";
+    }
+
+    if (isGreenRubikPixel(H, S, V, R, G, B)) {
         return "GREEN";
     }
 
-    bool blue =
-        B >= 70 &&
-        B > G + 3 &&
-        B > R + 6 &&
-        H > 110 &&
-        H <= 230;
-
-    if (blue) {
+    if (isBlueRubikPixel(H, S, V, R, G, B)) {
         return "BLUE";
     }
-
-    if (H <= 16 || H >= 235) return "RED";
-    if (H <= 68) return "ORANGE";
-    if (H <= 88) return "YELLOW";
-    if (H <= 145) return "GREEN";
-    if (H <= 230) return "BLUE";
 
     return "UNKNOWN";
 }
 
 bool isColoredRubikPixel(int H, int S, int V, int R, int G, int B)
 {
-    if (V < 30) {
+    // remove skin before color decisions
+    if (isSkinPixel(H, S, V, R, G, B)) {
         return false;
     }
 
-    float gRatio = 0.0f;
-    float bRatio = 0.0f;
-
-    if (R > 0) {
-        gRatio = (float)G / (float)R;
-        bRatio = (float)B / (float)R;
+    if (isYellowRubikPixel(H, S, V, R, G, B)) {
+        return true;
     }
 
-    if (isSkinLikeHSV(H, S, V)) {
-        bool strongRedCube =
-            S >= 120 &&
-            R >= 115 &&
-            R > G + 40 &&
-            R > B + 35 &&
-            gRatio <= 0.43f;
-
-        bool strongOrangeCube =
-            S >= 110 &&
-            R >= 115 &&
-            G >= 45 &&
-            gRatio > 0.43f &&
-            gRatio <= 0.95f &&
-            R > B + 18;
-
-        if (!strongRedCube && !strongOrangeCube) {
-            return false;
-        }
+    if (isOrangeRubikPixel(H, S, V, R, G, B)) {
+        return true;
     }
 
-    bool red =
-        R >= 115 &&
-        R > G + 40 &&
-        R > B + 35 &&
-        gRatio <= 0.43f &&
-        S >= 80 &&
-        (H <= 16 || H >= 235);
+    if (isRedRubikPixel(H, S, V, R, G, B)) {
+        return true;
+    }
 
-    bool orange =
-        R >= 115 &&
-        G >= 45 &&
-        B <= 165 &&
-        gRatio > 0.43f &&
-        gRatio <= 0.95f &&
-        bRatio <= 0.80f &&
-        R > B + 18 &&
-        S >= 55 &&
-        H <= 68;
+    if (isGreenRubikPixel(H, S, V, R, G, B)) {
+        return true;
+    }
 
-    bool yellow =
-        R >= 120 &&
-        G >= 110 &&
-        B <= 170 &&
-        abs(R - G) <= 105 &&
-        S >= 55 &&
-        H > 35 &&
-        H <= 88;
+    if (isBlueRubikPixel(H, S, V, R, G, B)) {
+        return true;
+    }
 
-    bool green =
-        G >= 75 &&
-        G > R + 5 &&
-        G > B + 5 &&
-        S >= 35 &&
-        H > 58 &&
-        H <= 145;
-
-    bool blue =
-        B >= 70 &&
-        B > G + 3 &&
-        B > R + 6 &&
-        S >= 32 &&
-        H > 110 &&
-        H <= 230;
-
-    return red || orange || yellow || green || blue;
+    return false;
 }
 
-Mat_<uchar> buildRubikMask(Mat_<Vec3b> img, Mat_<uchar>& H, Mat_<uchar>& S, Mat_<uchar>& V)
+Mat_<uchar> buildColoredRubikMask(Mat_<Vec3b> img, Mat_<uchar>& H, Mat_<uchar>& S, Mat_<uchar>& V)
 {
     Mat_<Vec3b> hsv = convertRGBtoHSV(img);
 
@@ -3211,63 +3358,49 @@ Mat_<uchar> buildRubikMask(Mat_<Vec3b> img, Mat_<uchar>& H, Mat_<uchar>& S, Mat_
         }
     }
 
-    cout << "Colored Rubik mask object pixels = " << objectPixels << endl;
+    cout << "Colored mask pixels = " << objectPixels << endl;
 
     return mask;
 }
 
-float pointDistance(Point2f a, Point2f b)
+Mat_<uchar> buildWhiteRubikMask(Mat_<Vec3b> img, Mat_<uchar> H, Mat_<uchar> S, Mat_<uchar> V)
 {
-    float dx = a.x - b.x;
-    float dy = a.y - b.y;
-    return sqrt(dx * dx + dy * dy);
-}
+    Mat_<uchar> mask(img.rows, img.cols);
+    mask.setTo(255);
 
-float componentDiag(ComponentInfo c)
-{
-    return sqrt((float)c.bbox.width * c.bbox.width + (float)c.bbox.height * c.bbox.height);
+    int objectPixels = 0;
+
+    for (int i = 0; i < img.rows; i++) {
+        for (int j = 0; j < img.cols; j++) {
+            int B = img(i, j)[0];
+            int G = img(i, j)[1];
+            int R = img(i, j)[2];
+
+            if (isWhiteRubikPixel(H(i, j), S(i, j), V(i, j), R, G, B)) {
+                mask(i, j) = 0;
+                objectPixels++;
+            }
+        }
+    }
+
+    cout << "White mask pixels = " << objectPixels << endl;
+
+    return mask;
 }
 
 Rect expandRectSafe(Rect r, int margin, Size size)
 {
     int x1 = max(0, r.x - margin);
     int y1 = max(0, r.y - margin);
+
     int x2 = min(size.width - 1, r.x + r.width + margin);
     int y2 = min(size.height - 1, r.y + r.height + margin);
 
     return Rect(x1, y1, x2 - x1 + 1, y2 - y1 + 1);
 }
 
-Mat_<int> buildObjectIntegralImage(Mat_<uchar> mask)
+vector<ComponentInfo> extractComponentsFromLabels(Mat_<int> labels, Mat_<uchar> H, Mat_<uchar> S, Mat_<uchar> V, Mat_<Vec3b> img)
 {
-    Mat_<int> integral(mask.rows + 1, mask.cols + 1, 0);
-
-    for (int i = 0; i < mask.rows; i++) {
-        int rowSum = 0;
-
-        for (int j = 0; j < mask.cols; j++) {
-            if (mask(i, j) == 0) {
-                rowSum++;
-            }
-
-            integral(i + 1, j + 1) = integral(i, j + 1) + rowSum;
-        }
-    }
-
-    return integral;
-}
-
-int getObjectCountInRect(Mat_<int> integral, Rect r)
-{
-    int x1 = r.x;
-    int y1 = r.y;
-    int x2 = r.x + r.width;
-    int y2 = r.y + r.height;
-
-    return integral(y2, x2) - integral(y1, x2) - integral(y2, x1) + integral(y1, x1);
-}
-
-vector<ComponentInfo> extractComponentsFromLabels( Mat_<int> labels, Mat_<uchar> H, Mat_<uchar> S, Mat_<uchar> V, Mat_<Vec3b> img) {
     int maxLabel = 0;
 
     for (int i = 0; i < labels.rows; i++) {
@@ -3286,9 +3419,11 @@ vector<ComponentInfo> extractComponentsFromLabels( Mat_<int> labels, Mat_<uchar>
 
     vector<long long> sumX(maxLabel + 1, 0);
     vector<long long> sumY(maxLabel + 1, 0);
+
     vector<long long> sumH(maxLabel + 1, 0);
     vector<long long> sumS(maxLabel + 1, 0);
     vector<long long> sumV(maxLabel + 1, 0);
+
     vector<long long> sumB(maxLabel + 1, 0);
     vector<long long> sumG(maxLabel + 1, 0);
     vector<long long> sumR(maxLabel + 1, 0);
@@ -3313,6 +3448,7 @@ vector<ComponentInfo> extractComponentsFromLabels( Mat_<int> labels, Mat_<uchar>
 
                 if (j < minX[label]) minX[label] = j;
                 if (j > maxX[label]) maxX[label] = j;
+
                 if (i < minY[label]) minY[label] = i;
                 if (i > maxY[label]) maxY[label] = i;
             }
@@ -3329,18 +3465,18 @@ vector<ComponentInfo> extractComponentsFromLabels( Mat_<int> labels, Mat_<uchar>
             int label = labels(i, j);
 
             if (label > 0) {
-                bool isBorder = false;
+                bool border = false;
 
                 for (int k = 0; k < 4; k++) {
                     int ni = i + di[k];
                     int nj = j + dj[k];
 
                     if (!isInside(labels, ni, nj) || labels(ni, nj) != label) {
-                        isBorder = true;
+                        border = true;
                     }
                 }
 
-                if (isBorder) {
+                if (border) {
                     perim[label]++;
                 }
             }
@@ -3371,6 +3507,12 @@ vector<ComponentInfo> extractComponentsFromLabels( Mat_<int> labels, Mat_<uchar>
         c.bbox = Rect(minX[label], minY[label], width, height);
         c.aspect = (float)width / height;
 
+        int bboxArea = width * height;
+
+        if (bboxArea > 0) {
+            c.bboxDensity = (float)c.area / bboxArea;
+        }
+
         if (c.perimeter > 0) {
             c.thinness = 4.0f * CV_PI * c.area / (c.perimeter * c.perimeter);
         }
@@ -3391,88 +3533,68 @@ vector<ComponentInfo> extractComponentsFromLabels( Mat_<int> labels, Mat_<uchar>
     return components;
 }
 
-bool isStickerCandidate(ComponentInfo c, int imageArea)
+bool isPossibleCubeFace(ComponentInfo c, Size imgSize, bool whiteMode)
 {
-    int minArea = max(20, (int)(0.00020f * imageArea));
-    int maxArea = (int)(0.14f * imageArea);
-
-    if (c.area < minArea) return false; //noise
-    if (c.area > maxArea) return false; //background
-
-    if (c.bbox.width < 5 || c.bbox.height < 5) return false; //lines or points
-
-    if (c.aspect < 0.20f || c.aspect > 5.00f) return false;
-
-    if (c.thinness < 0.06f) return false;
-
-    if (isSkinLikeHSV(c.meanH, c.meanS, c.meanV)) return false; //hand
-
-    return true;
-}
-
-vector<ComponentInfo> filterStickerCandidates(vector<ComponentInfo> components, Size imgSize)
-{
-    vector<ComponentInfo> candidates;
     int imageArea = imgSize.width * imgSize.height;
 
-    for (ComponentInfo c : components) {
-        if (isStickerCandidate(c, imageArea)) {
-            candidates.push_back(c);
-        }
+    int minArea;
+
+    if (whiteMode) {
+        minArea = (int)(0.010f * imageArea);
+    }
+    else {
+        minArea = (int)(0.008f * imageArea);
     }
 
-    sort(candidates.begin(), candidates.end(), [](ComponentInfo a, ComponentInfo b) {
-        return a.area > b.area;
-    });
+    int maxArea = (int)(0.40f * imageArea);
 
-    return candidates;
-}
+    if (c.area < minArea) return false;
+    if (c.area > maxArea) return false;
 
-bool isFaceLikeComponent(ComponentInfo c, int imageArea)
-{
-    if (c.area < 0.0015f * imageArea) return false;
-    if (c.area > 0.22f * imageArea) return false;
+    if (c.bbox.width < imgSize.width * 0.12f) return false;
+    if (c.bbox.height < imgSize.height * 0.12f) return false;
 
-    if (c.bbox.width < 35 || c.bbox.height < 35) return false;
+    if (c.aspect < 0.50f || c.aspect > 2.40f) return false;
 
-    if (c.aspect < 0.25f || c.aspect > 3.80f) return false;
+    if (c.bboxDensity < 0.16f) return false;
 
-    if (c.thinness < 0.06f) return false;
-
-    if (isSkinLikeHSV(c.meanH, c.meanS, c.meanV)) return false;
+    if (whiteMode) {
+        if (c.colorName != "WHITE") return false;
+    }
+    else {
+        if (c.colorName == "WHITE" || c.colorName == "UNKNOWN") return false;
+    }
 
     return true;
 }
 
-ComponentInfo findBestFaceCandidate(vector<ComponentInfo> components, Size imgSize)
+ComponentInfo findBestComponentFace(vector<ComponentInfo> components, Size imgSize, bool whiteMode)
 {
-    int imageArea = imgSize.width * imgSize.height;
-
     ComponentInfo best;
     float bestScore = -1.0f;
 
+    int centerX = imgSize.width / 2;
+
     for (ComponentInfo c : components) {
-        if (!isFaceLikeComponent(c, imageArea)) {
+        if (!isPossibleCubeFace(c, imgSize, whiteMode)) {
             continue;
         }
 
-        float areaScore = (float)c.area / imageArea;
-        float aspectPenalty = fabs(1.0f - c.aspect);
-        float compactnessBonus = c.thinness;
+        float areaScore = (float)c.area / (imgSize.width * imgSize.height);
+        float densityScore = c.bboxDensity;
+        float aspectPenalty = fabs(1.25f - c.aspect);
 
-        float colorBonus = 0.0f;
+        float rightBonus = 0.0f;
 
-        if (c.colorName == "BLUE" || c.colorName == "GREEN") {
-            colorBonus = 0.45f;
-        }
-        else if (c.colorName == "YELLOW" || c.colorName == "RED") {
-            colorBonus = 0.25f;
-        }
-        else if (c.colorName == "ORANGE") {
-            colorBonus = 0.35f;
+        if (c.center.x > centerX) {
+            rightBonus = 0.35f;
         }
 
-        float score = 20.0f * areaScore + compactnessBonus + colorBonus - 0.15f * aspectPenalty;
+        float score =
+            20.0f * areaScore +
+            2.0f * densityScore +
+            rightBonus -
+            0.5f * aspectPenalty;
 
         if (score > bestScore) {
             bestScore = score;
@@ -3483,289 +3605,65 @@ ComponentInfo findBestFaceCandidate(vector<ComponentInfo> components, Size imgSi
     return best;
 }
 
-bool isValidColoredFace(ComponentInfo face, Size imgSize)
+string dominantColorInsideBox(Mat_<Vec3b> img, Mat_<uchar> H, Mat_<uchar> S, Mat_<uchar> V, Rect box)
 {
-    int imageArea = imgSize.width * imgSize.height;
+    box = box & Rect(0, 0, img.cols, img.rows);
 
-    if (face.area <= 0) {
-        return false;
-    }
+    vector<int> votes(6, 0);
 
-    if (face.colorName == "WHITE") {
-        return false;
-    }
+    int marginX = max(2, box.width / 8);
+    int marginY = max(2, box.height / 8);
 
-    if (face.area < 0.006f * imageArea) { //small objects
-        return false;
-    }
-
-    return true;
-}
-
-vector<ComponentInfo> keepLargestCloseCluster(vector<ComponentInfo> candidates)
-{
-    vector<ComponentInfo> bestCluster;
-    int bestArea = 0;
-
-    if (candidates.empty()) {
-        return bestCluster;
-    }
-
-    for (int start = 0; start < candidates.size(); start++) {
-        vector<ComponentInfo> cluster;
-        cluster.push_back(candidates[start]);
-
-        float baseDiag = componentDiag(candidates[start]);
-        float maxDist = max(70.0f, baseDiag * 3.0f);
-
-        bool changed = true;
-
-        while (changed) {
-            changed = false;
-
-            for (ComponentInfo c : candidates) {
-                bool alreadyInCluster = false;
-
-                for (ComponentInfo existing : cluster) {
-                    if (existing.label == c.label) {
-                        alreadyInCluster = true;
-                        break;
-                    }
-                }
-
-                if (alreadyInCluster) {
-                    continue;
-                }
-
-                for (ComponentInfo existing : cluster) {
-                    float dist = pointDistance(c.center, existing.center);
-
-                    if (dist < maxDist) {
-                        cluster.push_back(c);
-                        changed = true;
-                        break;
-                    }
-                }
-            }
-        }
-
-        int clusterArea = 0;
-
-        for (ComponentInfo c : cluster) {
-            clusterArea += c.area;
-        }
-
-        if (clusterArea > bestArea) {
-            bestArea = clusterArea;
-            bestCluster = cluster;
-        }
-    }
-
-    sort(bestCluster.begin(), bestCluster.end(), [](ComponentInfo a, ComponentInfo b) {
-        return a.area > b.area;
-    });
-
-    return bestCluster;
-}
-
-ComponentInfo buildFaceFromCluster(vector<ComponentInfo> cluster)
-{
-    ComponentInfo face;
-
-    if (cluster.empty()) {
-        return face;
-    }
-
-    int minX = 1000000000;
-    int minY = 1000000000;
-    int maxX = 0;
-    int maxY = 0;
-
-    long long sumArea = 0;
-    long long sumX = 0;
-    long long sumY = 0;
-    long long sumH = 0;
-    long long sumS = 0;
-    long long sumV = 0;
-    long long sumR = 0;
-    long long sumG = 0;
-    long long sumB = 0;
-
-    for (ComponentInfo c : cluster) {
-        minX = min(minX, c.bbox.x);
-        minY = min(minY, c.bbox.y);
-        maxX = max(maxX, c.bbox.x + c.bbox.width);
-        maxY = max(maxY, c.bbox.y + c.bbox.height);
-
-        sumArea += c.area;
-        sumX += (long long)(c.center.x * c.area);
-        sumY += (long long)(c.center.y * c.area);
-
-        sumH += (long long)c.meanH * c.area;
-        sumS += (long long)c.meanS * c.area;
-        sumV += (long long)c.meanV * c.area;
-
-        sumR += (long long)c.meanR * c.area;
-        sumG += (long long)c.meanG * c.area;
-        sumB += (long long)c.meanB * c.area;
-    }
-
-    face.label = -1;
-    face.area = (int)sumArea;
-    face.bbox = Rect(minX, minY, maxX - minX + 1, maxY - minY + 1);
-    face.center = Point2f((float)sumX / sumArea, (float)sumY / sumArea);
-
-    face.aspect = (float)face.bbox.width / face.bbox.height;
-    face.perimeter = 2 * (face.bbox.width + face.bbox.height);
-
-    if (face.perimeter > 0) {
-        face.thinness = 4.0f * CV_PI * face.area / (face.perimeter * face.perimeter);
-    }
-
-    face.meanH = (int)(sumH / sumArea);
-    face.meanS = (int)(sumS / sumArea);
-    face.meanV = (int)(sumV / sumArea);
-
-    face.meanR = (int)(sumR / sumArea);
-    face.meanG = (int)(sumG / sumArea);
-    face.meanB = (int)(sumB / sumArea);
-
-    face.colorName = classifyRubikColor(
-        face.meanH,
-        face.meanS,
-        face.meanV,
-        face.meanR,
-        face.meanG,
-        face.meanB
+    Rect inside(
+        box.x + marginX,
+        box.y + marginY,
+        max(1, box.width - 2 * marginX),
+        max(1, box.height - 2 * marginY)
     );
 
-    return face;
-}
-
-vector<ComponentInfo> keepOnlyComponentsNearFace(vector<ComponentInfo> components, ComponentInfo face, Size imgSize) {
-    vector<ComponentInfo> kept;
-
-    if (face.area == 0) {
-        return kept;
-    }
-
-    int margin = max(face.bbox.width, face.bbox.height) / 3;
-    Rect faceZone = expandRectSafe(face.bbox, margin, imgSize);
-
-    for (ComponentInfo c : components) {
-        Point center((int)c.center.x, (int)c.center.y);
-
-        if (faceZone.contains(center)) {
-            kept.push_back(c);
-        }
-    }
-
-    sort(kept.begin(), kept.end(), [](ComponentInfo a, ComponentInfo b) {
-        return a.area > b.area;
-    });
-
-    return kept;
-}
-
-Rect refineFaceBoxByBestSquare(Mat_<uchar> mask, Rect initialBox, Size imgSize)
-{
-    initialBox = initialBox & Rect(0, 0, imgSize.width, imgSize.height);
-
-    if (initialBox.width <= 0 || initialBox.height <= 0) {
-        return initialBox;
-    }
-
-    Mat_<int> integral = buildObjectIntegralImage(mask);
-
-    int maxSide = min(initialBox.width, initialBox.height);
-    int minSide = max(35, (int)(0.45f * maxSide));
-
-    Rect bestBox = initialBox;
-    float bestScore = -1.0f;
-
-    int sideStep = max(6, maxSide / 16);
-
-    for (int side = maxSide; side >= minSide; side -= sideStep) {
-        int step = max(4, side / 14);
-
-        int yStart = initialBox.y;
-        int yEnd = initialBox.y + initialBox.height - side;
-
-        int xStart = initialBox.x;
-        int xEnd = initialBox.x + initialBox.width - side;
-
-        for (int y = yStart; y <= yEnd; y += step) {
-            for (int x = xStart; x <= xEnd; x += step) {
-                Rect candidate(x, y, side, side);
-
-                int count = getObjectCountInRect(integral, candidate);
-                float density = (float)count / (side * side);
-
-                if (density < 0.25f) {
-                    continue;
-                }
-
-                float score = density * 10000.0f + count * 0.03f - side * 0.25f;
-
-                if (score > bestScore) {
-                    bestScore = score;
-                    bestBox = candidate;
-                }
-            }
-        }
-    }
-
-    int margin = max(3, bestBox.width / 35);
-    return expandRectSafe(bestBox, margin, imgSize);
-}
-
-Mat_<uchar> buildWhiteMask(Mat_<Vec3b> img, Mat_<uchar> H, Mat_<uchar> S, Mat_<uchar> V)
-{
-    Mat_<uchar> mask(img.rows, img.cols);
-    mask.setTo(255);
-
-    for (int i = 0; i < img.rows; i++) {
-        for (int j = 0; j < img.cols; j++) {
+    for (int i = inside.y; i < inside.y + inside.height; i++) {
+        for (int j = inside.x; j < inside.x + inside.width; j++) {
             int B = img(i, j)[0];
             int G = img(i, j)[1];
             int R = img(i, j)[2];
 
-            if (isWhiteRubikPixel(H(i, j), S(i, j), V(i, j), R, G, B)) {
-                mask(i, j) = 0;
-            }
+            string color = classifyRubikColor(H(i, j), S(i, j), V(i, j), R, G, B);
+
+            if (color == "WHITE") votes[0]++;
+            if (color == "YELLOW") votes[1]++;
+            if (color == "RED") votes[2]++;
+            if (color == "ORANGE") votes[3]++;
+            if (color == "GREEN") votes[4]++;
+            if (color == "BLUE") votes[5]++;
         }
     }
 
-    return mask;
+    int bestIndex = -1;
+    int bestVotes = 0;
+
+    for (int i = 0; i < 6; i++) {
+        if (votes[i] > bestVotes) {
+            bestVotes = votes[i];
+            bestIndex = i;
+        }
+    }
+
+    if (bestIndex == 0) return "WHITE";
+    if (bestIndex == 1) return "YELLOW";
+    if (bestIndex == 2) return "RED";
+    if (bestIndex == 3) return "ORANGE";
+    if (bestIndex == 4) return "GREEN";
+    if (bestIndex == 5) return "BLUE";
+
+    return "UNKNOWN";
 }
 
-int countColorPixelsInRect(Mat_<Vec3b> img, Mat_<uchar> H, Mat_<uchar> S, Mat_<uchar> V, Rect r)
+float averageValueInRect(Mat_<uchar> img, Rect r)
 {
-    int count = 0;
-
     r = r & Rect(0, 0, img.cols, img.rows);
 
-    for (int i = r.y; i < r.y + r.height; i++) {
-        for (int j = r.x; j < r.x + r.width; j++) {
-            int B = img(i, j)[0];
-            int G = img(i, j)[1];
-            int R = img(i, j)[2];
-
-            if (isColoredRubikPixel(H(i, j), S(i, j), V(i, j), R, G, B)) {
-                count++;
-            }
-        }
-    }
-
-    return count;
-}
-
-float averageSInRect(Mat_<uchar> S, Rect r)
-{
-    r = r & Rect(0, 0, S.cols, S.rows);
-
     if (r.width <= 0 || r.height <= 0) {
-        return 255.0f;
+        return 0.0f;
     }
 
     long long sum = 0;
@@ -3773,29 +3671,28 @@ float averageSInRect(Mat_<uchar> S, Rect r)
 
     for (int i = r.y; i < r.y + r.height; i++) {
         for (int j = r.x; j < r.x + r.width; j++) {
-            sum += S(i, j);
+            sum += img(i, j);
             count++;
         }
     }
 
     if (count == 0) {
-        return 255.0f;
+        return 0.0f;
     }
 
     return (float)sum / count;
 }
 
-float whiteDensityInRect(
-    Mat_<Vec3b> img,
-    Mat_<uchar> H,
-    Mat_<uchar> S,
-    Mat_<uchar> V,
-    Rect r
-) {
+float whiteDensityInRectForCanny(Mat_<Vec3b> img, Mat_<uchar> H, Mat_<uchar> S, Mat_<uchar> V, Rect r)
+{
     r = r & Rect(0, 0, img.cols, img.rows);
 
-    int whiteCount = 0;
-    int totalCount = 0;
+    if (r.width <= 0 || r.height <= 0) {
+        return 0.0f;
+    }
+
+    int whitePixels = 0;
+    int totalPixels = 0;
 
     for (int i = r.y; i < r.y + r.height; i++) {
         for (int j = r.x; j < r.x + r.width; j++) {
@@ -3804,628 +3701,234 @@ float whiteDensityInRect(
             int R = img(i, j)[2];
 
             if (isWhiteRubikPixel(H(i, j), S(i, j), V(i, j), R, G, B)) {
-                whiteCount++;
+                whitePixels++;
             }
 
-            totalCount++;
+            totalPixels++;
         }
     }
 
-    if (totalCount == 0) {
+    if (totalPixels == 0) {
         return 0.0f;
     }
 
-    return (float)whiteCount / totalCount;
+    return (float)whitePixels / totalPixels;
 }
 
-float skinDensityInRect(
-    Mat_<Vec3b> img,
-    Mat_<uchar> H,
-    Mat_<uchar> S,
-    Mat_<uchar> V,
-    Rect r
-) {
-    r = r & Rect(0, 0, img.cols, img.rows);
-
-    int skinCount = 0;
-    int totalCount = 0;
-
-    for (int i = r.y; i < r.y + r.height; i++) {
-        for (int j = r.x; j < r.x + r.width; j++) {
-            int B = img(i, j)[0];
-            int G = img(i, j)[1];
-            int R = img(i, j)[2];
-
-            bool skin =
-                H(i, j) >= 0 &&
-                H(i, j) <= 35 &&
-                S(i, j) >= 18 &&
-                S(i, j) <= 145 &&
-                V(i, j) >= 65 &&
-                R > B + 8;
-
-            if (skin) {
-                skinCount++;
-            }
-
-            totalCount++;
-        }
-    }
-
-    if (totalCount == 0) {
-        return 0.0f;
-    }
-
-    return (float)skinCount / totalCount;
-}
-
-float saturationGridScoreInRect(Mat_<uchar> S, Rect box)
+float cannyGridScore(Mat_<uchar> edges, Rect box)
 {
-    box = box & Rect(0, 0, S.cols, S.rows);
+    box = box & Rect(0, 0, edges.cols, edges.rows);
 
     if (box.width < 60 || box.height < 60) {
         return 0.0f;
     }
 
-    int band = max(2, box.width / 28);
+    int band = max(2, min(box.width, box.height) / 35);
 
     int x1 = box.x + box.width / 3;
     int x2 = box.x + 2 * box.width / 3;
+
     int y1 = box.y + box.height / 3;
     int y2 = box.y + 2 * box.height / 3;
 
-    long long lineSum = 0;
-    int lineCount = 0;
+    int edgeCount = 0;
+    int totalCount = 0;
 
     for (int i = box.y; i < box.y + box.height; i++) {
-        for (int dx = -band; dx <= band; dx++) {
-            int j1 = x1 + dx;
-            int j2 = x2 + dx;
+        for (int d = -band; d <= band; d++) {
+            int j1 = x1 + d;
+            int j2 = x2 + d;
 
-            if (isInside(S, i, j1)) {
-                lineSum += S(i, j1);
-                lineCount++;
+            if (isInside(edges, i, j1)) {
+                if (edges(i, j1) != 0) edgeCount++;
+                totalCount++;
             }
 
-            if (isInside(S, i, j2)) {
-                lineSum += S(i, j2);
-                lineCount++;
+            if (isInside(edges, i, j2)) {
+                if (edges(i, j2) != 0) edgeCount++;
+                totalCount++;
             }
         }
     }
 
     for (int j = box.x; j < box.x + box.width; j++) {
-        for (int dy = -band; dy <= band; dy++) {
-            int i1 = y1 + dy;
-            int i2 = y2 + dy;
+        for (int d = -band; d <= band; d++) {
+            int i1 = y1 + d;
+            int i2 = y2 + d;
 
-            if (isInside(S, i1, j)) {
-                lineSum += S(i1, j);
-                lineCount++;
+            if (isInside(edges, i1, j)) {
+                if (edges(i1, j) != 0) edgeCount++;
+                totalCount++;
             }
 
-            if (isInside(S, i2, j)) {
-                lineSum += S(i2, j);
-                lineCount++;
+            if (isInside(edges, i2, j)) {
+                if (edges(i2, j) != 0) edgeCount++;
+                totalCount++;
             }
         }
     }
 
-    if (lineCount == 0) {
+    if (totalCount == 0) {
         return 0.0f;
     }
 
-    float lineMean = (float)lineSum / lineCount;
-
-    Rect inner(
-        box.x + box.width / 8,
-        box.y + box.height / 8,
-        box.width * 3 / 4,
-        box.height * 3 / 4
-    );
-
-    float innerMean = averageSInRect(S, inner);
-
-    float diff = lineMean - innerMean;
-
-    if (diff < 0) {
-        diff = 0;
-    }
-
-    return diff / 255.0f;
+    return (float)edgeCount / totalCount;
 }
 
-float darkGridScoreInRect(Mat_<uchar> V, Rect r)
+float outerEdgeScore(Mat_<uchar> edges, Rect box)
 {
-    r = r & Rect(0, 0, V.cols, V.rows);
-
-    if (r.width < 60 || r.height < 60) {
-        return 0.0f;
-    }
-
-    double sum = 0.0;
-    int total = 0;
-
-    for (int i = r.y; i < r.y + r.height; i++) {
-        for (int j = r.x; j < r.x + r.width; j++) {
-            sum += V(i, j);
-            total++;
-        }
-    }
-
-    if (total == 0) {
-        return 0.0f;
-    }
-
-    int threshold = (int)(sum / total - 12.0);
-    threshold = max(45, min(190, threshold));
-
-    int band = max(2, r.width / 28);
-
-    int x1 = r.x + r.width / 3;
-    int x2 = r.x + 2 * r.width / 3;
-    int y1 = r.y + r.height / 3;
-    int y2 = r.y + 2 * r.height / 3;
-
-    int darkPixels = 0;
-    int checkedPixels = 0;
-
-    for (int i = r.y; i < r.y + r.height; i++) {
-        for (int dx = -band; dx <= band; dx++) {
-            int j1 = x1 + dx;
-            int j2 = x2 + dx;
-
-            if (isInside(V, i, j1)) {
-                checkedPixels++;
-                if (V(i, j1) < threshold) darkPixels++;
-            }
-
-            if (isInside(V, i, j2)) {
-                checkedPixels++;
-                if (V(i, j2) < threshold) darkPixels++;
-            }
-        }
-    }
-
-    for (int j = r.x; j < r.x + r.width; j++) {
-        for (int dy = -band; dy <= band; dy++) {
-            int i1 = y1 + dy;
-            int i2 = y2 + dy;
-
-            if (isInside(V, i1, j)) {
-                checkedPixels++;
-                if (V(i1, j) < threshold) darkPixels++;
-            }
-
-            if (isInside(V, i2, j)) {
-                checkedPixels++;
-                if (V(i2, j) < threshold) darkPixels++;
-            }
-        }
-    }
-
-    if (checkedPixels == 0) {
-        return 0.0f;
-    }
-
-    return (float)darkPixels / checkedPixels;
-}
-
-float whiteNineCellScore(
-    Mat_<Vec3b> img,
-    Mat_<uchar> H,
-    Mat_<uchar> S,
-    Mat_<uchar> V,
-    Rect box
-) {
-    box = box & Rect(0, 0, img.cols, img.rows);
+    box = box & Rect(0, 0, edges.cols, edges.rows);
 
     if (box.width < 60 || box.height < 60) {
         return 0.0f;
     }
 
-    int goodCells = 0;
-    float totalDensity = 0.0f;
-    float totalAvgS = 0.0f;
-    float minDensity = 1.0f;
-    float maxDensity = 0.0f;
+    int band = max(2, min(box.width, box.height) / 35);
 
-    for (int row = 0; row < 3; row++) {
-        for (int col = 0; col < 3; col++) {
-            int x1 = box.x + col * box.width / 3;
-            int x2 = box.x + (col + 1) * box.width / 3;
-            int y1 = box.y + row * box.height / 3;
-            int y2 = box.y + (row + 1) * box.height / 3;
+    int edgeCount = 0;
+    int totalCount = 0;
 
-            int marginX = max(3, (x2 - x1) / 5);
-            int marginY = max(3, (y2 - y1) / 5);
+    for (int j = box.x; j < box.x + box.width; j++) {
+        for (int d = -band; d <= band; d++) {
+            int top = box.y + d;
+            int bottom = box.y + box.height - 1 + d;
 
-            Rect cell(
-                x1 + marginX,
-                y1 + marginY,
-                max(1, x2 - x1 - 2 * marginX),
-                max(1, y2 - y1 - 2 * marginY)
-            );
+            if (isInside(edges, top, j)) {
+                if (edges(top, j) != 0) edgeCount++;
+                totalCount++;
+            }
 
-            float density = whiteDensityInRect(img, H, S, V, cell);
-            float avgS = averageSInRect(S, cell);
-
-            totalDensity += density;
-            totalAvgS += avgS;
-
-            minDensity = min(minDensity, density);
-            maxDensity = max(maxDensity, density);
-
-            if (density >= 0.24f && avgS <= 78.0f) {
-                goodCells++;
+            if (isInside(edges, bottom, j)) {
+                if (edges(bottom, j) != 0) edgeCount++;
+                totalCount++;
             }
         }
     }
-
-    // Important:
-    // For the white face, we want almost all 9 cells.
-    // This rejects the false box above the cube.
-    if (goodCells < 8) {
-        return 0.0f;
-    }
-
-    if (minDensity < 0.08f) {
-        return 0.0f;
-    }
-
-    float avgDensity = totalDensity / 9.0f;
-    float avgS = totalAvgS / 9.0f;
-
-    float lowSBonus = max(0.0f, (85.0f - avgS) / 85.0f);
-    float balancePenalty = maxDensity - minDensity;
-
-    return
-        avgDensity +
-        0.10f * goodCells +
-        lowSBonus -
-        0.35f * balancePenalty;
-}
-
-float strictWhiteGridScoreInRect(Mat_<uchar> S, Mat_<uchar> V, Rect box)
-{
-    box = box & Rect(0, 0, S.cols, S.rows);
-
-    if (box.width < 60 || box.height < 60) {
-        return 0.0f;
-    }
-
-    double sumV = 0.0;
-    int total = 0;
 
     for (int i = box.y; i < box.y + box.height; i++) {
-        for (int j = box.x; j < box.x + box.width; j++) {
-            sumV += V(i, j);
-            total++;
+        for (int d = -band; d <= band; d++) {
+            int left = box.x + d;
+            int right = box.x + box.width - 1 + d;
+
+            if (isInside(edges, i, left)) {
+                if (edges(i, left) != 0) edgeCount++;
+                totalCount++;
+            }
+
+            if (isInside(edges, i, right)) {
+                if (edges(i, right) != 0) edgeCount++;
+                totalCount++;
+            }
         }
     }
 
-    if (total == 0) {
+    if (totalCount == 0) {
         return 0.0f;
     }
 
-    int thresholdV = (int)(sumV / total - 12.0);
-    thresholdV = max(45, min(190, thresholdV));
-
-    Rect inner(
-        box.x + box.width / 8,
-        box.y + box.height / 8,
-        box.width * 3 / 4,
-        box.height * 3 / 4
-    );
-
-    float innerMeanS = averageSInRect(S, inner);
-
-    int band = max(2, box.width / 30);
-
-    int xLines[2] = {
-        box.x + box.width / 3,
-        box.x + 2 * box.width / 3
-    };
-
-    int yLines[2] = {
-        box.y + box.height / 3,
-        box.y + 2 * box.height / 3
-    };
-
-    float scores[4];
-    int scoreIndex = 0;
-
-    for (int lineIndex = 0; lineIndex < 2; lineIndex++) {
-        int x = xLines[lineIndex];
-
-        int darkCount = 0;
-        int count = 0;
-        long long sumSLine = 0;
-
-        for (int i = box.y; i < box.y + box.height; i++) {
-            for (int dx = -band; dx <= band; dx++) {
-                int j = x + dx;
-
-                if (!isInside(V, i, j)) {
-                    continue;
-                }
-
-                if (V(i, j) < thresholdV) {
-                    darkCount++;
-                }
-
-                sumSLine += S(i, j);
-                count++;
-            }
-        }
-
-        if (count == 0) {
-            scores[scoreIndex++] = 0.0f;
-            continue;
-        }
-
-        float darkRatio = (float)darkCount / count;
-        float meanSLine = (float)sumSLine / count;
-        float sContrast = max(0.0f, (meanSLine - innerMeanS) / 255.0f);
-
-        scores[scoreIndex++] = darkRatio + 2.0f * sContrast;
-    }
-
-    for (int lineIndex = 0; lineIndex < 2; lineIndex++) {
-        int y = yLines[lineIndex];
-
-        int darkCount = 0;
-        int count = 0;
-        long long sumSLine = 0;
-
-        for (int j = box.x; j < box.x + box.width; j++) {
-            for (int dy = -band; dy <= band; dy++) {
-                int i = y + dy;
-
-                if (!isInside(V, i, j)) {
-                    continue;
-                }
-
-                if (V(i, j) < thresholdV) {
-                    darkCount++;
-                }
-
-                sumSLine += S(i, j);
-                count++;
-            }
-        }
-
-        if (count == 0) {
-            scores[scoreIndex++] = 0.0f;
-            continue;
-        }
-
-        float darkRatio = (float)darkCount / count;
-        float meanSLine = (float)sumSLine / count;
-        float sContrast = max(0.0f, (meanSLine - innerMeanS) / 255.0f);
-
-        scores[scoreIndex++] = darkRatio + 2.0f * sContrast;
-    }
-
-    float minScore = scores[0];
-
-    for (int i = 1; i < 4; i++) {
-        minScore = min(minScore, scores[i]);
-    }
-
-    return minScore;
+    return (float)edgeCount / totalCount;
 }
-ComponentInfo findBestWhiteFaceCandidate(
-    Mat_<Vec3b> img,
-    Mat_<uchar> H,
-    Mat_<uchar> S,
-    Mat_<uchar> V,
-    Mat_<uchar> coloredMask
-) {
-    ComponentInfo face;
+
+ComponentInfo findWhiteFaceWithCanny(Mat_<Vec3b> img, Mat_<uchar> H, Mat_<uchar> S, Mat_<uchar> V)
+{
+    ComponentInfo bestFace;
+
+    Mat_<uchar> blurredV;
+    GaussianBlur(V, blurredV, Size(5, 5), 1.0);
+
+    Mat_<uchar> edges;
+    Canny(blurredV, edges, 35, 110);
+
+    imshow("White Canny on V channel", edges);
 
     int minDim = min(img.rows, img.cols);
 
-    int minSide = max(220, minDim / 5);
-    int maxSide = max(minSide + 1, (int)(0.58f * minDim));
+    int minSide = max(120, minDim / 5);
+    int maxSide = min((int)(0.55f * minDim), minDim - 10);
 
-    Rect bestBox;
     float bestScore = -1.0f;
-    int bestWhiteCount = 0;
+    Rect bestBox;
 
-    Mat_<uchar> whiteMask = buildWhiteMask(img, H, S, V);
-    Mat_<int> whiteIntegral = buildObjectIntegralImage(whiteMask);
+    int sideStep = 12;
+    int step = 8;
 
-    int sideStep = max(12, maxSide / 24);
+    // Cube is usually on the right half in your images.
+    int startX = img.cols * 32 / 100;
 
-    int xStartGlobal = (int)(img.cols * 0.34f);
-    int xEndGlobal = img.cols - 20;
+    for (int side = minSide; side <= maxSide; side += sideStep) {
+        for (int y = 5; y + side < img.rows - 5; y += step) {
+            for (int x = startX; x + side < img.cols - 5; x += step) {
+                Rect box(x, y, side, side);
 
-    for (int side = maxSide; side >= minSide; side -= sideStep) {
-        int step = max(7, side / 18);
+                float avgS = averageValueInRect(S, box);
+                float avgV = averageValueInRect(V, box);
+                float whiteDensity = whiteDensityInRectForCanny(img, H, S, V, box);
 
-        for (int y = 20; y + side < img.rows - 20; y += step) {
-            for (int x = xStartGlobal; x + side < xEndGlobal; x += step) {
-                Rect candidate(x, y, side, side);
+                if (avgS > 105.0f) continue;
+                if (avgV < 90.0f) continue;
+                if (whiteDensity < 0.15f) continue;
+
+                float gridScore = cannyGridScore(edges, box);
+                float borderScore = outerEdgeScore(edges, box);
+
+                if (gridScore < 0.012f && borderScore < 0.012f) {
+                    continue;
+                }
 
                 Point2f center(
-                    candidate.x + candidate.width / 2.0f,
-                    candidate.y + candidate.height / 2.0f
+                    box.x + box.width / 2.0f,
+                    box.y + box.height / 2.0f
                 );
 
-                // Important:
-                // The false detection was too high.
-                // The cube face in your images is around middle / lower-middle.
-                if (center.y < img.rows * 0.24f) {
-                    continue;
+                float rightBonus = center.x / img.cols;
+                float centerY = center.y / img.rows;
+                float yBonus = 1.0f - fabs(centerY - 0.45f);
+
+                if (yBonus < 0.0f) {
+                    yBonus = 0.0f;
                 }
 
-                int whiteCount = getObjectCountInRect(whiteIntegral, candidate);
-                float whiteDensity = (float)whiteCount / (side * side);
-
-                if (whiteDensity < 0.22f || whiteDensity > 0.94f) {
-                    continue;
-                }
-
-                float avgS = averageSInRect(S, candidate);
-
-                if (avgS > 82.0f) {
-                    continue;
-                }
-
-                float skinDensity = skinDensityInRect(img, H, S, V, candidate);
-
-                if (skinDensity > 0.24f) {
-                    continue;
-                }
-
-                float cellScore = whiteNineCellScore(img, H, S, V, candidate);
-
-                if (cellScore < 0.60f) {
-                    continue;
-                }
-
-                float vGridScore = darkGridScoreInRect(V, candidate);
-                float sGridScore = saturationGridScoreInRect(S, candidate);
-                float strictGridScore = strictWhiteGridScoreInRect(S, V, candidate);
-
-                // This is the main fix:
-                // all 4 internal grid lines must be present enough.
-                if (strictGridScore < 0.006f) {
-                    continue;
-                }
-
-                float centerPreference = center.x / img.cols;
-                float yPreference = 1.0f - fabs((center.y / img.rows) - 0.45f);
-
-                if (yPreference < 0.0f) {
-                    yPreference = 0.0f;
-                }
-
-                float lowSScore = max(0.0f, (85.0f - avgS) / 85.0f);
-                float sizeScore = (float)side / (float)minDim;
+                float lowSScore = max(0.0f, (105.0f - avgS) / 105.0f);
+                float sizeScore = (float)side / minDim;
 
                 float score =
-                    whiteDensity * 6500.0f +
-                    cellScore * 16000.0f +
-                    vGridScore * 35000.0f +
-                    sGridScore * 80000.0f +
-                    strictGridScore * 150000.0f +
-                    lowSScore * 5000.0f +
-                    sizeScore * 7000.0f +
-                    centerPreference * 900.0f +
-                    yPreference * 5000.0f -
-                    skinDensity * 22000.0f;
+                    whiteDensity * 5000.0f +
+                    gridScore * 45000.0f +
+                    borderScore * 18000.0f +
+                    lowSScore * 3000.0f +
+                    sizeScore * 2500.0f +
+                    rightBonus * 1500.0f +
+                    yBonus * 1000.0f;
 
                 if (score > bestScore) {
                     bestScore = score;
-                    bestBox = candidate;
-                    bestWhiteCount = whiteCount;
+                    bestBox = box;
                 }
             }
         }
     }
 
     if (bestScore < 0.0f) {
-        return face;
+        return bestFace;
     }
 
-    int margin = max(3, bestBox.width / 45);
-    bestBox = expandRectSafe(bestBox, margin, img.size());
+    bestBox = expandRectSafe(bestBox, 4, img.size());
 
-    long long sumH = 0;
-    long long sumS = 0;
-    long long sumV = 0;
-    long long sumR = 0;
-    long long sumG = 0;
-    long long sumB = 0;
-    int count = 0;
-
-    for (int i = bestBox.y; i < bestBox.y + bestBox.height; i++) {
-        for (int j = bestBox.x; j < bestBox.x + bestBox.width; j++) {
-            int B = img(i, j)[0];
-            int G = img(i, j)[1];
-            int R = img(i, j)[2];
-
-            if (isWhiteRubikPixel(H(i, j), S(i, j), V(i, j), R, G, B)) {
-                sumH += H(i, j);
-                sumS += S(i, j);
-                sumV += V(i, j);
-                sumR += R;
-                sumG += G;
-                sumB += B;
-                count++;
-            }
-        }
-    }
-
-    if (count == 0) {
-        return face;
-    }
-
-    face.label = -2;
-    face.area = bestWhiteCount;
-    face.bbox = bestBox;
-
-    face.center = Point2f(
+    bestFace.label = -10;
+    bestFace.bbox = bestBox;
+    bestFace.area = bestBox.width * bestBox.height;
+    bestFace.center = Point2f(
         bestBox.x + bestBox.width / 2.0f,
         bestBox.y + bestBox.height / 2.0f
     );
+    bestFace.aspect = (float)bestBox.width / bestBox.height;
+    bestFace.bboxDensity = 1.0f;
+    bestFace.colorName = "WHITE";
 
-    face.aspect = 1.0f;
-    face.perimeter = 2 * (bestBox.width + bestBox.height);
-
-    if (face.perimeter > 0) {
-        face.thinness = 4.0f * CV_PI * face.area / (face.perimeter * face.perimeter);
-    }
-
-    face.meanH = (int)(sumH / count);
-    face.meanS = (int)(sumS / count);
-    face.meanV = (int)(sumV / count);
-    face.meanR = (int)(sumR / count);
-    face.meanG = (int)(sumG / count);
-    face.meanB = (int)(sumB / count);
-
-    face.colorName = "WHITE";
-
-    return face;
+    return bestFace;
 }
 
-Mat_<Vec3b> drawCandidates(Mat_<Vec3b> img, vector<ComponentInfo> candidates)
-{
-    Mat_<Vec3b> result = img.clone();
-
-    int count = 0;
-
-    for (ComponentInfo c : candidates) {
-        Vec3b boxColor = Vec3b(0, 255, 0);
-
-        if (count < 9) {
-            boxColor = Vec3b(0, 0, 255);
-        }
-
-        rectangle(result, c.bbox, boxColor, 2);
-        circle(result, Point((int)c.center.x, (int)c.center.y), 3, Vec3b(255, 0, 0), FILLED);
-
-        string text = c.colorName + " A=" + to_string(c.area);
-
-        putText(
-            result,
-            text,
-            Point(c.bbox.x, max(0, c.bbox.y - 5)),
-            FONT_HERSHEY_SIMPLEX,
-            0.45,
-            Scalar(0, 0, 255),
-            1
-        );
-
-        count++;
-    }
-
-    return result;
-}
-
-Mat_<Vec3b> drawFaceAndSimpleGrid(Mat_<Vec3b> img, ComponentInfo face, Mat_<uchar> cleanMask)
+Mat_<Vec3b> drawFaceAndSimpleGrid(Mat_<Vec3b> img, ComponentInfo face)
 {
     Mat_<Vec3b> result = img.clone();
 
@@ -4443,14 +3946,10 @@ Mat_<Vec3b> drawFaceAndSimpleGrid(Mat_<Vec3b> img, ComponentInfo face, Mat_<ucha
         return result;
     }
 
-    Rect box;
+    Rect box = face.bbox;
 
-    if (face.label == -2) {
-        box = face.bbox;
-    }
-    else {
-        box = refineFaceBoxByBestSquare(cleanMask, face.bbox, img.size());
-    }
+    int margin = max(4, min(box.width, box.height) / 25);
+    box = expandRectSafe(box, margin, img.size());
 
     rectangle(result, box, Vec3b(0, 0, 255), 3);
 
@@ -4477,12 +3976,14 @@ Mat_<Vec3b> drawFaceAndSimpleGrid(Mat_<Vec3b> img, ComponentInfo face, Mat_<ucha
     return result;
 }
 
-void printCandidates(string title, vector<ComponentInfo> candidates)
+void printComponents(string title, vector<ComponentInfo> components)
 {
-    cout << "\n" << title << ": " << candidates.size() << endl;
+    cout << "\n" << title << ": " << components.size() << endl;
 
-    for (int i = 0; i < candidates.size(); i++) {
-        ComponentInfo c = candidates[i];
+    int limit = min((int)components.size(), 20);
+
+    for (int i = 0; i < limit; i++) {
+        ComponentInfo c = components[i];
 
         cout << i + 1
              << " label=" << c.label
@@ -4490,7 +3991,7 @@ void printCandidates(string title, vector<ComponentInfo> candidates)
              << " center=(" << c.center.x << "," << c.center.y << ")"
              << " bbox=" << c.bbox.width << "x" << c.bbox.height
              << " aspect=" << c.aspect
-             << " thinness=" << c.thinness
+             << " density=" << c.bboxDensity
              << " HSV=(" << c.meanH << "," << c.meanS << "," << c.meanV << ")"
              << " RGB=(" << c.meanR << "," << c.meanG << "," << c.meanB << ")"
              << " color=" << c.colorName
@@ -4512,7 +4013,7 @@ void printFace(ComponentInfo face)
          << " center=(" << face.center.x << "," << face.center.y << ")"
          << " bbox=" << face.bbox.width << "x" << face.bbox.height
          << " aspect=" << face.aspect
-         << " thinness=" << face.thinness
+         << " density=" << face.bboxDensity
          << " HSV=(" << face.meanH << "," << face.meanS << "," << face.meanV << ")"
          << " RGB=(" << face.meanR << "," << face.meanG << "," << face.meanB << ")"
          << " color=" << face.colorName
@@ -4521,67 +4022,88 @@ void printFace(ComponentInfo face)
 
 void project()
 {
-    string filename;
-    filename = "Project/portocaliu.bmp";
-    Mat_<Vec3b> img = imread(filename);
+    vector<string> filenames = {
+        "Project/portocaliu.bmp",
+        "Project/rosu.bmp",
+        "Project/galben.bmp",
+        "Project/verde.bmp",
+        "Project/albastru.bmp",
+        "Project/alb.bmp"
+    };
 
-    Mat_<uchar> H, S, V;
+    for (const string& filename : filenames) {
+        cout << "\n===== " << filename << " =====" << endl;
 
-    Mat_<uchar> coloredMask = buildRubikMask(img, H, S, V);
+        Mat_<Vec3b> originalImg = imread(filename);
 
-    Mat_<uchar> strel = squareStrel3();
-    Mat_<uchar> opened = openingOp(coloredMask, strel);
-    Mat_<uchar> cleanMask = opened;
+        if (originalImg.empty()) {
+            cout << "Could not load: " << filename << endl;
+            continue;
+        }
 
-    Mat_<int> labels(cleanMask.rows, cleanMask.cols, 0);
-    bfs_connected_components(cleanMask, labels, true);
+        Mat_<Vec3b> img = resizeProjectImageIfNeeded(originalImg);
 
-    vector<ComponentInfo> components = extractComponentsFromLabels(labels, H, S, V, img);
-    vector<ComponentInfo> stickerCandidates = filterStickerCandidates(components, img.size());
+        Mat_<uchar> H, S, V;
 
-    ComponentInfo coloredFace = findBestFaceCandidate(components, img.size());
+        Mat_<uchar> coloredMask = buildColoredRubikMask(img, H, S, V);
 
-    ComponentInfo face;
+        Mat_<uchar> strel3 = squareStrel3();
+        Mat_<uchar> strel5 = squareStrel5();
 
-    if (isValidColoredFace(coloredFace, img.size())) {
-        face = coloredFace;
-        cout << "Valid colored face found: " << face.colorName << endl;
+        Mat_<uchar> cleanColoredMask = openingOp(coloredMask, strel3);
+        cleanColoredMask = closingOp(cleanColoredMask, strel5);
+
+        Mat_<int> coloredLabels(cleanColoredMask.rows, cleanColoredMask.cols, 0);
+        bfs_connected_components(cleanColoredMask, coloredLabels, true);
+
+        vector<ComponentInfo> coloredComponents =
+            extractComponentsFromLabels(coloredLabels, H, S, V, img);
+
+        ComponentInfo face = findBestComponentFace(coloredComponents, img.size(), false);
+
+        bool usedWhiteCanny = false;
+
+        if (face.area == 0) {
+            cout << "No colored face found. Trying white with Canny on V channel..." << endl;
+
+            face = findWhiteFaceWithCanny(img, H, S, V);
+            usedWhiteCanny = true;
+
+            if (face.area > 0) {
+                cout << "White face found with Canny." << endl;
+            }
+            else {
+                cout << "No white face found with Canny." << endl;
+            }
+        }
+
+        if (face.area > 0 && face.colorName != "WHITE") {
+            face.colorName = dominantColorInsideBox(img, H, S, V, face.bbox);
+        }
+
+        Mat_<Vec3b> result = drawFaceAndSimpleGrid(img, face);
+
+        if (!usedWhiteCanny) {
+            printComponents("Colored components", coloredComponents);
+
+            imshow("5 Colored mask", coloredMask);
+            imshow("6 Clean colored mask", cleanColoredMask);
+            displayLabels(coloredLabels, "7 Colored connected components");
+        }
+
+        printFace(face);
+
+        imshow("1 Original resized", img);
+        imshow("2 H channel", H);
+        imshow("3 S channel", S);
+        imshow("4 V channel", V);
+        imshow("8 Detected face and simple 3x3 grid", result);
+
+        waitKey(0);
+        destroyAllWindows();
     }
-    else {
-        cout << "No valid colored face found. Trying white detection" << endl;
-        // TODO
-    }
-
-    vector<ComponentInfo> finalCandidates;
-
-    if (face.area > 0 && face.label != -2) {
-        finalCandidates = keepOnlyComponentsNearFace(components, face, img.size());
-    }
-    else {
-        finalCandidates.clear();
-    }
-
-    Mat_<Vec3b> allCandidatesImage = drawCandidates(img, stickerCandidates);
-    Mat_<Vec3b> finalCandidatesImage = drawCandidates(img, finalCandidates);
-    Mat_<Vec3b> faceGridImage = drawFaceAndSimpleGrid(img, face, cleanMask);
-
-    printCandidates("All sticker-like candidates", stickerCandidates);
-    printFace(face);
-    printCandidates("Final close candidates near cube face", finalCandidates);
-
-    imshow("1 Original", img);
-    imshow("2 H channel", H);
-    imshow("3 S channel", S);
-    imshow("4 V channel", V);
-    imshow("5 Colored mask", coloredMask);
-    imshow("6 Clean mask", cleanMask);
-    displayLabels(labels, "8 Connected components");
-    // imshow("8 All sticker-like candidates", allCandidatesImage);
-    // imshow("9 Final close cube candidates", finalCandidatesImage);
-    imshow("10 Detected face and simple 3x3 grid", faceGridImage);
-
-    waitKey(0);
 }
+
 int main(){
     int op;
     do{
