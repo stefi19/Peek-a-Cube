@@ -3024,7 +3024,6 @@ void splitHSVChannels(Mat_<Vec3b> hsv, Mat_<uchar>& H, Mat_<uchar>& S, Mat_<ucha
     H = Mat_<uchar>(hsv.rows, hsv.cols);
     S = Mat_<uchar>(hsv.rows, hsv.cols);
     V = Mat_<uchar>(hsv.rows, hsv.cols);
-
     for (int i = 0; i < hsv.rows; i++) {
         for (int j = 0; j < hsv.cols; j++) {
             H(i, j) = hsv(i, j)[0];
@@ -3038,22 +3037,17 @@ struct ComponentInfo {
     int label = 0;
     int area = 0;
     int perimeter = 0;
-
     Point2f center = Point2f(0, 0);
     Rect bbox;
-
     float aspect = 0.0f;
     float thinness = 0.0f;
     float bboxDensity = 0.0f;
-
     int meanH = 0;
     int meanS = 0;
     int meanV = 0;
-
     int meanB = 0;
     int meanG = 0;
     int meanR = 0;
-
     string colorName = "UNKNOWN";
 };
 
@@ -3088,22 +3082,12 @@ Mat_<uchar> closingOp(Mat_<uchar> src, Mat_<uchar> strel)
 Mat_<Vec3b> resizeProjectImageIfNeeded(Mat_<Vec3b> img)
 {
     int maxDim = max(img.rows, img.cols);
-
     if (maxDim <= 900) {
         return img;
     }
-
     float scale = 900.0f / maxDim;
-
     Mat_<Vec3b> resized;
     resize(img, resized, Size(), scale, scale, INTER_AREA);
-
-    cout << "Image resized from "
-         << img.cols << "x" << img.rows
-         << " to "
-         << resized.cols << "x" << resized.rows
-         << endl;
-
     return resized;
 }
 
@@ -3112,33 +3096,16 @@ bool isSkinPixel(int H, int S, int V, int R, int G, int B)
     if (V < 45) {
         return false;
     }
-
     float gRatio = 0.0f;
     float bRatio = 0.0f;
-
     if (R > 0) {
         gRatio = (float)G / (float)R;
         bRatio = (float)B / (float)R;
     }
-
     bool hueSkin = H >= 0 && H <= 35;
-
-    bool rgbSkin =
-        R > 70 &&
-        G > 45 &&
-        B > 25 &&
-        R >= G &&
-        G >= B - 5 &&
-        R > B + 15;
-
-    bool ratioSkin =
-        gRatio >= 0.48f &&
-        gRatio <= 0.95f &&
-        bRatio >= 0.25f &&
-        bRatio <= 0.85f;
-
+    bool rgbSkin = R > 70 && G > 45 && B > 25 && R >= G && G >= B - 5 && R > B + 15;
+    bool ratioSkin = gRatio >= 0.48f && gRatio <= 0.95f && bRatio >= 0.25f && bRatio <= 0.85f;
     bool saturationSkin = S >= 15 && S <= 135;
-
     return hueSkin && rgbSkin && ratioSkin && saturationSkin;
 }
 
@@ -3146,19 +3113,10 @@ bool isWhiteRubikPixel(int H, int S, int V, int R, int G, int B)
 {
     int maxRGB = max(R, max(G, B));
     int minRGB = min(R, min(G, B));
-
-    bool brightEnough =
-        V >= 105 &&
-        maxRGB >= 115 &&
-        R >= 85 &&
-        G >= 85 &&
-        B >= 85;
-
+    bool brightEnough = V >= 105 && maxRGB >= 115 && R >= 85 && G >= 85 && B >= 85;
     bool lowSaturation = S <= 85;
     bool balancedRGB = maxRGB - minRGB <= 75;
-
     bool notSkin = !isSkinPixel(H, S, V, R, G, B);
-
     return brightEnough && lowSaturation && balancedRGB && notSkin;
 }
 
@@ -3166,28 +3124,14 @@ bool isYellowRubikPixel(int H, int S, int V, int R, int G, int B)
 {
     float gRatio = 0.0f;
     float bRatio = 0.0f;
-
     if (R > 0) {
         gRatio = (float)G / (float)R;
         bRatio = (float)B / (float)R;
     }
-
     bool hueOK = H >= 28 && H <= 82;
-
-    bool rgbOK =
-        R >= 95 &&
-        G >= 90 &&
-        B <= 170 &&
-        R > B + 30 &&
-        G > B + 30;
-
-    bool ratioOK =
-        gRatio >= 0.70f &&
-        gRatio <= 1.20f &&
-        bRatio <= 0.70f;
-
+    bool rgbOK = R >= 95 && G >= 90 && B <= 170 && R > B + 30 && G > B + 30;
+    bool ratioOK = gRatio >= 0.70f && gRatio <= 1.20f && bRatio <= 0.70f;
     bool satOK = S >= 45 && V >= 70;
-
     return hueOK && rgbOK && ratioOK && satOK;
 }
 
@@ -3195,28 +3139,14 @@ bool isOrangeRubikPixel(int H, int S, int V, int R, int G, int B)
 {
     float gRatio = 0.0f;
     float bRatio = 0.0f;
-
     if (R > 0) {
         gRatio = (float)G / (float)R;
         bRatio = (float)B / (float)R;
     }
-
     bool hueOK = H >= 7 && H <= 45;
-
-    bool rgbOK =
-        R >= 90 &&
-        G >= 40 &&
-        R > G + 5 &&
-        R > B + 22 &&
-        G > B + 5;
-
-    bool ratioOK =
-        gRatio >= 0.43f &&
-        gRatio <= 0.93f &&
-        bRatio <= 0.78f;
-
+    bool rgbOK = R >= 90 && G >= 40 && R > G + 5 && R > B + 22 && G > B + 5;
+    bool ratioOK = gRatio >= 0.43f && gRatio <= 0.93f && bRatio <= 0.78f;
     bool satOK = S >= 55 && V >= 45;
-
     return hueOK && rgbOK && ratioOK && satOK;
 }
 
@@ -3224,53 +3154,30 @@ bool isRedRubikPixel(int H, int S, int V, int R, int G, int B)
 {
     float gRatio = 0.0f;
     float bRatio = 0.0f;
-
     if (R > 0) {
         gRatio = (float)G / (float)R;
         bRatio = (float)B / (float)R;
     }
-
     bool hueOK = H <= 14 || H >= 240;
-
-    bool rgbOK =
-        R >= 85 &&
-        R > G + 25 &&
-        R > B + 25;
-
-    bool ratioOK =
-        gRatio <= 0.62f &&
-        bRatio <= 0.85f;
-
+    bool rgbOK = R >= 85 && R > G + 25 && R > B + 25;
+    bool ratioOK = gRatio <= 0.62f && bRatio <= 0.85f;
     bool satOK = S >= 55 && V >= 45;
-
     return hueOK && rgbOK && ratioOK && satOK;
 }
 
 bool isGreenRubikPixel(int H, int S, int V, int R, int G, int B)
 {
     bool hueOK = H >= 65 && H <= 155;
-
-    bool rgbOK =
-        G >= 55 &&
-        G > R + 8 &&
-        G > B + 3;
-
+    bool rgbOK = G >= 55 && G > R + 8 && G > B + 3;
     bool satOK = S >= 45 && V >= 45;
-
     return hueOK && rgbOK && satOK;
 }
 
 bool isBlueRubikPixel(int H, int S, int V, int R, int G, int B)
 {
     bool hueOK = H >= 110 && H <= 235;
-
-    bool rgbOK =
-        B >= 50 &&
-        B > R + 8 &&
-        B >= G - 10;
-
+    bool rgbOK = B >= 50 && B > R + 8 && B >= G - 10;
     bool satOK = S >= 40 && V >= 35;
-
     return hueOK && rgbOK && satOK;
 }
 
@@ -3279,28 +3186,22 @@ string classifyRubikColor(int H, int S, int V, int R, int G, int B)
     if (isWhiteRubikPixel(H, S, V, R, G, B)) {
         return "WHITE";
     }
-
     if (isYellowRubikPixel(H, S, V, R, G, B)) {
         return "YELLOW";
     }
-
-    // Important: orange before red, because orange was detected as red.
+    // orange before red
     if (isOrangeRubikPixel(H, S, V, R, G, B)) {
         return "ORANGE";
     }
-
     if (isRedRubikPixel(H, S, V, R, G, B)) {
         return "RED";
     }
-
     if (isGreenRubikPixel(H, S, V, R, G, B)) {
         return "GREEN";
     }
-
     if (isBlueRubikPixel(H, S, V, R, G, B)) {
         return "BLUE";
     }
-
     return "UNKNOWN";
 }
 
@@ -3310,56 +3211,42 @@ bool isColoredRubikPixel(int H, int S, int V, int R, int G, int B)
     if (isSkinPixel(H, S, V, R, G, B)) {
         return false;
     }
-
     if (isYellowRubikPixel(H, S, V, R, G, B)) {
         return true;
     }
-
     if (isOrangeRubikPixel(H, S, V, R, G, B)) {
         return true;
     }
-
     if (isRedRubikPixel(H, S, V, R, G, B)) {
         return true;
     }
-
     if (isGreenRubikPixel(H, S, V, R, G, B)) {
         return true;
     }
-
     if (isBlueRubikPixel(H, S, V, R, G, B)) {
         return true;
     }
-
     return false;
 }
 
 Mat_<uchar> buildColoredRubikMask(Mat_<Vec3b> img, Mat_<uchar>& H, Mat_<uchar>& S, Mat_<uchar>& V)
 {
     Mat_<Vec3b> hsv = convertRGBtoHSV(img);
-
     splitHSVChannels(hsv, H, S, V);
-
     Mat_<uchar> mask(img.rows, img.cols);
     mask.setTo(255);
-
     int objectPixels = 0;
-
     for (int i = 0; i < img.rows; i++) {
         for (int j = 0; j < img.cols; j++) {
             int B = img(i, j)[0];
             int G = img(i, j)[1];
             int R = img(i, j)[2];
-
             if (isColoredRubikPixel(H(i, j), S(i, j), V(i, j), R, G, B)) {
                 mask(i, j) = 0;
                 objectPixels++;
             }
         }
     }
-
-    cout << "Colored mask pixels = " << objectPixels << endl;
-
     return mask;
 }
 
@@ -3367,24 +3254,18 @@ Mat_<uchar> buildWhiteRubikMask(Mat_<Vec3b> img, Mat_<uchar> H, Mat_<uchar> S, M
 {
     Mat_<uchar> mask(img.rows, img.cols);
     mask.setTo(255);
-
     int objectPixels = 0;
-
     for (int i = 0; i < img.rows; i++) {
         for (int j = 0; j < img.cols; j++) {
             int B = img(i, j)[0];
             int G = img(i, j)[1];
             int R = img(i, j)[2];
-
             if (isWhiteRubikPixel(H(i, j), S(i, j), V(i, j), R, G, B)) {
                 mask(i, j) = 0;
                 objectPixels++;
             }
         }
     }
-
-    cout << "White mask pixels = " << objectPixels << endl;
-
     return mask;
 }
 
@@ -3392,17 +3273,14 @@ Rect expandRectSafe(Rect r, int margin, Size size)
 {
     int x1 = max(0, r.x - margin);
     int y1 = max(0, r.y - margin);
-
     int x2 = min(size.width - 1, r.x + r.width + margin);
     int y2 = min(size.height - 1, r.y + r.height + margin);
-
     return Rect(x1, y1, x2 - x1 + 1, y2 - y1 + 1);
 }
 
 vector<ComponentInfo> extractComponentsFromLabels(Mat_<int> labels, Mat_<uchar> H, Mat_<uchar> S, Mat_<uchar> V, Mat_<Vec3b> img)
 {
     int maxLabel = 0;
-
     for (int i = 0; i < labels.rows; i++) {
         for (int j = 0; j < labels.cols; j++) {
             if (labels(i, j) > maxLabel) {
@@ -3410,161 +3288,119 @@ vector<ComponentInfo> extractComponentsFromLabels(Mat_<int> labels, Mat_<uchar> 
             }
         }
     }
-
     vector<int> area(maxLabel + 1, 0);
     vector<int> minX(maxLabel + 1, labels.cols);
     vector<int> minY(maxLabel + 1, labels.rows);
     vector<int> maxX(maxLabel + 1, 0);
     vector<int> maxY(maxLabel + 1, 0);
-
     vector<long long> sumX(maxLabel + 1, 0);
     vector<long long> sumY(maxLabel + 1, 0);
-
     vector<long long> sumH(maxLabel + 1, 0);
     vector<long long> sumS(maxLabel + 1, 0);
     vector<long long> sumV(maxLabel + 1, 0);
-
     vector<long long> sumB(maxLabel + 1, 0);
     vector<long long> sumG(maxLabel + 1, 0);
     vector<long long> sumR(maxLabel + 1, 0);
-
     for (int i = 0; i < labels.rows; i++) {
         for (int j = 0; j < labels.cols; j++) {
             int label = labels(i, j);
-
             if (label > 0) {
                 area[label]++;
-
                 sumX[label] += j;
                 sumY[label] += i;
-
                 sumH[label] += H(i, j);
                 sumS[label] += S(i, j);
                 sumV[label] += V(i, j);
-
                 sumB[label] += img(i, j)[0];
                 sumG[label] += img(i, j)[1];
                 sumR[label] += img(i, j)[2];
-
                 if (j < minX[label]) minX[label] = j;
                 if (j > maxX[label]) maxX[label] = j;
-
                 if (i < minY[label]) minY[label] = i;
                 if (i > maxY[label]) maxY[label] = i;
             }
         }
     }
-
     vector<int> perim(maxLabel + 1, 0);
-
     int di[4] = { -1, 0, 1, 0 };
     int dj[4] = { 0, -1, 0, 1 };
-
     for (int i = 0; i < labels.rows; i++) {
         for (int j = 0; j < labels.cols; j++) {
             int label = labels(i, j);
-
             if (label > 0) {
                 bool border = false;
-
                 for (int k = 0; k < 4; k++) {
                     int ni = i + di[k];
                     int nj = j + dj[k];
-
                     if (!isInside(labels, ni, nj) || labels(ni, nj) != label) {
                         border = true;
                     }
                 }
-
                 if (border) {
                     perim[label]++;
                 }
             }
         }
     }
-
     vector<ComponentInfo> components;
-
     for (int label = 1; label <= maxLabel; label++) {
         if (area[label] == 0) {
             continue;
         }
-
         ComponentInfo c;
-
         c.label = label;
         c.area = area[label];
         c.perimeter = perim[label];
-
         c.center = Point2f(
             (float)sumX[label] / area[label],
             (float)sumY[label] / area[label]
         );
-
         int width = maxX[label] - minX[label] + 1;
         int height = maxY[label] - minY[label] + 1;
-
         c.bbox = Rect(minX[label], minY[label], width, height);
         c.aspect = (float)width / height;
-
         int bboxArea = width * height;
-
         if (bboxArea > 0) {
             c.bboxDensity = (float)c.area / bboxArea;
         }
-
         if (c.perimeter > 0) {
             c.thinness = 4.0f * CV_PI * c.area / (c.perimeter * c.perimeter);
         }
-
         c.meanH = (int)(sumH[label] / area[label]);
         c.meanS = (int)(sumS[label] / area[label]);
         c.meanV = (int)(sumV[label] / area[label]);
-
         c.meanB = (int)(sumB[label] / area[label]);
         c.meanG = (int)(sumG[label] / area[label]);
         c.meanR = (int)(sumR[label] / area[label]);
-
         c.colorName = classifyRubikColor(c.meanH, c.meanS, c.meanV, c.meanR, c.meanG, c.meanB);
-
         components.push_back(c);
     }
-
     return components;
 }
 
 bool isPossibleCubeFace(ComponentInfo c, Size imgSize, bool whiteMode)
 {
     int imageArea = imgSize.width * imgSize.height;
-
     int minArea;
-
     if (whiteMode) {
         minArea = (int)(0.010f * imageArea);
     }
     else {
         minArea = (int)(0.008f * imageArea);
     }
-
     int maxArea = (int)(0.40f * imageArea);
-
     if (c.area < minArea) return false;
     if (c.area > maxArea) return false;
-
     if (c.bbox.width < imgSize.width * 0.12f) return false;
     if (c.bbox.height < imgSize.height * 0.12f) return false;
-
     if (c.aspect < 0.50f || c.aspect > 2.40f) return false;
-
     if (c.bboxDensity < 0.16f) return false;
-
     if (whiteMode) {
         if (c.colorName != "WHITE") return false;
     }
     else {
         if (c.colorName == "WHITE" || c.colorName == "UNKNOWN") return false;
     }
-
     return true;
 }
 
@@ -3572,63 +3408,45 @@ ComponentInfo findBestComponentFace(vector<ComponentInfo> components, Size imgSi
 {
     ComponentInfo best;
     float bestScore = -1.0f;
-
     int centerX = imgSize.width / 2;
-
     for (ComponentInfo c : components) {
         if (!isPossibleCubeFace(c, imgSize, whiteMode)) {
             continue;
         }
-
         float areaScore = (float)c.area / (imgSize.width * imgSize.height);
         float densityScore = c.bboxDensity;
         float aspectPenalty = fabs(1.25f - c.aspect);
-
         float rightBonus = 0.0f;
-
-        if (c.center.x > centerX) {
-            rightBonus = 0.35f;
-        }
-
-        float score =
-            20.0f * areaScore +
-            2.0f * densityScore +
-            rightBonus -
-            0.5f * aspectPenalty;
-
+        // if (c.center.x > centerX) {
+        //     rightBonus = 0.10f;
+        // }
+        float score = 20.0f * areaScore + 2.0f * densityScore + rightBonus - 0.5f * aspectPenalty;
         if (score > bestScore) {
             bestScore = score;
             best = c;
         }
     }
-
     return best;
 }
 
 string dominantColorInsideBox(Mat_<Vec3b> img, Mat_<uchar> H, Mat_<uchar> S, Mat_<uchar> V, Rect box)
 {
     box = box & Rect(0, 0, img.cols, img.rows);
-
     vector<int> votes(6, 0);
-
     int marginX = max(2, box.width / 8);
     int marginY = max(2, box.height / 8);
-
     Rect inside(
         box.x + marginX,
         box.y + marginY,
         max(1, box.width - 2 * marginX),
         max(1, box.height - 2 * marginY)
     );
-
     for (int i = inside.y; i < inside.y + inside.height; i++) {
         for (int j = inside.x; j < inside.x + inside.width; j++) {
             int B = img(i, j)[0];
             int G = img(i, j)[1];
             int R = img(i, j)[2];
-
             string color = classifyRubikColor(H(i, j), S(i, j), V(i, j), R, G, B);
-
             if (color == "WHITE") votes[0]++;
             if (color == "YELLOW") votes[1]++;
             if (color == "RED") votes[2]++;
@@ -3637,270 +3455,204 @@ string dominantColorInsideBox(Mat_<Vec3b> img, Mat_<uchar> H, Mat_<uchar> S, Mat
             if (color == "BLUE") votes[5]++;
         }
     }
-
     int bestIndex = -1;
     int bestVotes = 0;
-
     for (int i = 0; i < 6; i++) {
         if (votes[i] > bestVotes) {
             bestVotes = votes[i];
             bestIndex = i;
         }
     }
-
     if (bestIndex == 0) return "WHITE";
     if (bestIndex == 1) return "YELLOW";
     if (bestIndex == 2) return "RED";
     if (bestIndex == 3) return "ORANGE";
     if (bestIndex == 4) return "GREEN";
     if (bestIndex == 5) return "BLUE";
-
     return "UNKNOWN";
 }
 
 float averageValueInRect(Mat_<uchar> img, Rect r)
 {
     r = r & Rect(0, 0, img.cols, img.rows);
-
     if (r.width <= 0 || r.height <= 0) {
         return 0.0f;
     }
-
     long long sum = 0;
     int count = 0;
-
     for (int i = r.y; i < r.y + r.height; i++) {
         for (int j = r.x; j < r.x + r.width; j++) {
             sum += img(i, j);
             count++;
         }
     }
-
     if (count == 0) {
         return 0.0f;
     }
-
     return (float)sum / count;
 }
 
 float whiteDensityInRectForCanny(Mat_<Vec3b> img, Mat_<uchar> H, Mat_<uchar> S, Mat_<uchar> V, Rect r)
 {
     r = r & Rect(0, 0, img.cols, img.rows);
-
     if (r.width <= 0 || r.height <= 0) {
         return 0.0f;
     }
-
     int whitePixels = 0;
     int totalPixels = 0;
-
     for (int i = r.y; i < r.y + r.height; i++) {
         for (int j = r.x; j < r.x + r.width; j++) {
             int B = img(i, j)[0];
             int G = img(i, j)[1];
             int R = img(i, j)[2];
-
             if (isWhiteRubikPixel(H(i, j), S(i, j), V(i, j), R, G, B)) {
                 whitePixels++;
             }
-
             totalPixels++;
         }
     }
-
     if (totalPixels == 0) {
         return 0.0f;
     }
-
     return (float)whitePixels / totalPixels;
 }
 
 float cannyGridScore(Mat_<uchar> edges, Rect box)
 {
     box = box & Rect(0, 0, edges.cols, edges.rows);
-
     if (box.width < 60 || box.height < 60) {
         return 0.0f;
     }
-
     int band = max(2, min(box.width, box.height) / 35);
-
     int x1 = box.x + box.width / 3;
     int x2 = box.x + 2 * box.width / 3;
-
     int y1 = box.y + box.height / 3;
     int y2 = box.y + 2 * box.height / 3;
-
     int edgeCount = 0;
     int totalCount = 0;
-
     for (int i = box.y; i < box.y + box.height; i++) {
         for (int d = -band; d <= band; d++) {
             int j1 = x1 + d;
             int j2 = x2 + d;
-
             if (isInside(edges, i, j1)) {
                 if (edges(i, j1) != 0) edgeCount++;
                 totalCount++;
             }
-
             if (isInside(edges, i, j2)) {
                 if (edges(i, j2) != 0) edgeCount++;
                 totalCount++;
             }
         }
     }
-
     for (int j = box.x; j < box.x + box.width; j++) {
         for (int d = -band; d <= band; d++) {
             int i1 = y1 + d;
             int i2 = y2 + d;
-
             if (isInside(edges, i1, j)) {
                 if (edges(i1, j) != 0) edgeCount++;
                 totalCount++;
             }
-
             if (isInside(edges, i2, j)) {
                 if (edges(i2, j) != 0) edgeCount++;
                 totalCount++;
             }
         }
     }
-
     if (totalCount == 0) {
         return 0.0f;
     }
-
     return (float)edgeCount / totalCount;
 }
 
 float outerEdgeScore(Mat_<uchar> edges, Rect box)
 {
     box = box & Rect(0, 0, edges.cols, edges.rows);
-
     if (box.width < 60 || box.height < 60) {
         return 0.0f;
     }
-
     int band = max(2, min(box.width, box.height) / 35);
-
     int edgeCount = 0;
     int totalCount = 0;
-
     for (int j = box.x; j < box.x + box.width; j++) {
         for (int d = -band; d <= band; d++) {
             int top = box.y + d;
             int bottom = box.y + box.height - 1 + d;
-
             if (isInside(edges, top, j)) {
                 if (edges(top, j) != 0) edgeCount++;
                 totalCount++;
             }
-
             if (isInside(edges, bottom, j)) {
                 if (edges(bottom, j) != 0) edgeCount++;
                 totalCount++;
             }
         }
     }
-
     for (int i = box.y; i < box.y + box.height; i++) {
         for (int d = -band; d <= band; d++) {
             int left = box.x + d;
             int right = box.x + box.width - 1 + d;
-
             if (isInside(edges, i, left)) {
                 if (edges(i, left) != 0) edgeCount++;
                 totalCount++;
             }
-
             if (isInside(edges, i, right)) {
                 if (edges(i, right) != 0) edgeCount++;
                 totalCount++;
             }
         }
     }
-
     if (totalCount == 0) {
         return 0.0f;
     }
-
     return (float)edgeCount / totalCount;
 }
 
 ComponentInfo findWhiteFaceWithCanny(Mat_<Vec3b> img, Mat_<uchar> H, Mat_<uchar> S, Mat_<uchar> V, bool showCanny = true)
 {
     ComponentInfo bestFace;
-
     Mat_<uchar> blurredV;
     GaussianBlur(V, blurredV, Size(5, 5), 1.0);
-
     Mat_<uchar> edges;
     Canny(blurredV, edges, 35, 110);
-
     if (showCanny) {
         imshow("White Canny on V channel", edges);
     }
-
     int minDim = min(img.rows, img.cols);
-
     int minSide = max(120, minDim / 5);
     int maxSide = min((int)(0.55f * minDim), minDim - 10);
-
     float bestScore = -1.0f;
     Rect bestBox;
-
     int sideStep = 12;
     int step = 8;
-
-    int startX = img.cols * 32 / 100;
-
+    int startX = img.cols * 10 / 100;
     for (int side = minSide; side <= maxSide; side += sideStep) {
         for (int y = 5; y + side < img.rows - 5; y += step) {
             for (int x = startX; x + side < img.cols - 5; x += step) {
                 Rect box(x, y, side, side);
-
                 float avgS = averageValueInRect(S, box);
                 float avgV = averageValueInRect(V, box);
                 float whiteDensity = whiteDensityInRectForCanny(img, H, S, V, box);
-
                 if (avgS > 105.0f) continue;
                 if (avgV < 90.0f) continue;
                 if (whiteDensity < 0.15f) continue;
-
                 float gridScore = cannyGridScore(edges, box);
                 float borderScore = outerEdgeScore(edges, box);
-
                 if (gridScore < 0.012f && borderScore < 0.012f) {
                     continue;
                 }
-
                 Point2f center(
                     box.x + box.width / 2.0f,
                     box.y + box.height / 2.0f
                 );
-
                 float rightBonus = center.x / img.cols;
                 float centerY = center.y / img.rows;
                 float yBonus = 1.0f - fabs(centerY - 0.45f);
-
                 if (yBonus < 0.0f) {
                     yBonus = 0.0f;
                 }
-
                 float lowSScore = max(0.0f, (105.0f - avgS) / 105.0f);
                 float sizeScore = (float)side / minDim;
-
-                float score =
-                    whiteDensity * 5000.0f +
-                    gridScore * 45000.0f +
-                    borderScore * 18000.0f +
-                    lowSScore * 3000.0f +
-                    sizeScore * 2500.0f +
-                    rightBonus * 1500.0f +
-                    yBonus * 1000.0f;
-
+                float score = whiteDensity * 5000.0f + gridScore * 45000.0f + borderScore * 18000.0f + lowSScore * 3000.0f + sizeScore * 2500.0f + rightBonus * 1500.0f + yBonus * 1000.0f;
                 if (score > bestScore) {
                     bestScore = score;
                     bestBox = box;
@@ -3908,13 +3660,10 @@ ComponentInfo findWhiteFaceWithCanny(Mat_<Vec3b> img, Mat_<uchar> H, Mat_<uchar>
             }
         }
     }
-
     if (bestScore < 0.0f) {
         return bestFace;
     }
-
     bestBox = expandRectSafe(bestBox, 4, img.size());
-
     bestFace.label = -10;
     bestFace.bbox = bestBox;
     bestFace.area = bestBox.width * bestBox.height;
@@ -3925,197 +3674,119 @@ ComponentInfo findWhiteFaceWithCanny(Mat_<Vec3b> img, Mat_<uchar> H, Mat_<uchar>
     bestFace.aspect = (float)bestBox.width / bestBox.height;
     bestFace.bboxDensity = 1.0f;
     bestFace.colorName = "WHITE";
-
     return bestFace;
 }
 
 Mat_<Vec3b> drawFaceAndSimpleGrid(Mat_<Vec3b> img, ComponentInfo face)
 {
     Mat_<Vec3b> result = img.clone();
-
     if (face.area == 0) {
-        putText(
-            result,
-            "No face candidate found",
-            Point(20, 30),
-            FONT_HERSHEY_SIMPLEX,
-            0.8,
-            Scalar(0, 0, 255),
-            2
-        );
-
+        putText(result,"No face candidate found",Point(20, 30),FONT_HERSHEY_SIMPLEX,0.8,Scalar(0, 0, 255),2);
         return result;
     }
-
     Rect box = face.bbox;
-
     int margin = max(4, min(box.width, box.height) / 25);
     box = expandRectSafe(box, margin, img.size());
-
     rectangle(result, box, Vec3b(0, 0, 255), 3);
-
     for (int k = 1; k <= 2; k++) {
         int x = box.x + k * box.width / 3;
         int y = box.y + k * box.height / 3;
-
         line(result, Point(x, box.y), Point(x, box.y + box.height), Scalar(255, 0, 0), 2);
         line(result, Point(box.x, y), Point(box.x + box.width, y), Scalar(255, 0, 0), 2);
     }
-
     string text = "FACE " + face.colorName + " A=" + to_string(face.area);
-
-    putText(
-        result,
-        text,
-        Point(box.x, max(0, box.y - 8)),
-        FONT_HERSHEY_SIMPLEX,
-        0.6,
-        Scalar(0, 0, 255),
-        2
-    );
-
+    putText(result, text,Point(box.x, max(0, box.y - 8)),FONT_HERSHEY_SIMPLEX,0.6,Scalar(0, 0, 255),2);
     return result;
 }
 
 void printComponents(string title, vector<ComponentInfo> components)
 {
     cout << "\n" << title << ": " << components.size() << endl;
-
     int limit = min((int)components.size(), 20);
-
     for (int i = 0; i < limit; i++) {
         ComponentInfo c = components[i];
-
-        cout << i + 1
-             << " label=" << c.label
-             << " area=" << c.area
-             << " center=(" << c.center.x << "," << c.center.y << ")"
-             << " bbox=" << c.bbox.width << "x" << c.bbox.height
-             << " aspect=" << c.aspect
-             << " density=" << c.bboxDensity
-             << " HSV=(" << c.meanH << "," << c.meanS << "," << c.meanV << ")"
-             << " RGB=(" << c.meanR << "," << c.meanG << "," << c.meanB << ")"
-             << " color=" << c.colorName
-             << endl;
+        cout << i + 1 << " label=" << c.label << " area=" << c.area << " center=(" << c.center.x << "," << c.center.y << ")" << " bbox=" << c.bbox.width << "x" << c.bbox.height << " aspect=" << c.aspect << " density=" << c.bboxDensity << " HSV=(" << c.meanH << "," << c.meanS << "," << c.meanV << ")" << " RGB=(" << c.meanR << "," << c.meanG << "," << c.meanB << ")" << " color=" << c.colorName << endl;
     }
 }
 
 void printFace(ComponentInfo face)
 {
     cout << "\nBest face candidate:" << endl;
-
     if (face.area == 0) {
         cout << "No face found." << endl;
         return;
     }
-
-    cout << "label=" << face.label
-         << " area=" << face.area
-         << " center=(" << face.center.x << "," << face.center.y << ")"
-         << " bbox=" << face.bbox.width << "x" << face.bbox.height
-         << " aspect=" << face.aspect
-         << " density=" << face.bboxDensity
-         << " HSV=(" << face.meanH << "," << face.meanS << "," << face.meanV << ")"
-         << " RGB=(" << face.meanR << "," << face.meanG << "," << face.meanB << ")"
-         << " color=" << face.colorName
-         << endl;
+    cout << "label=" << face.label << " area=" << face.area << " center=(" << face.center.x << "," << face.center.y << ")" << " bbox=" << face.bbox.width << "x" << face.bbox.height << " aspect=" << face.aspect << " density=" << face.bboxDensity << " HSV=(" << face.meanH << "," << face.meanS << "," << face.meanV << ")" << " RGB=(" << face.meanR << "," << face.meanG << "," << face.meanB << ")" << " color=" << face.colorName << endl;
 }
 Mat_<Vec3b> processRubikFrame(Mat_<Vec3b> inputImg, bool showDebugWindows, bool printInfo)
 {
     Mat_<Vec3b> img = resizeProjectImageIfNeeded(inputImg);
-
     Mat_<uchar> H, S, V;
-
     Mat_<uchar> coloredMask = buildColoredRubikMask(img, H, S, V);
-
     Mat_<uchar> strel3 = squareStrel3();
     Mat_<uchar> strel5 = squareStrel5();
-
     Mat_<uchar> cleanColoredMask = openingOp(coloredMask, strel3);
     cleanColoredMask = closingOp(cleanColoredMask, strel5);
-
     Mat_<int> coloredLabels(cleanColoredMask.rows, cleanColoredMask.cols, 0);
     bfs_connected_components(cleanColoredMask, coloredLabels, true);
-
-    vector<ComponentInfo> coloredComponents =
-        extractComponentsFromLabels(coloredLabels, H, S, V, img);
-
+    vector<ComponentInfo> coloredComponents = extractComponentsFromLabels(coloredLabels, H, S, V, img);
     ComponentInfo face = findBestComponentFace(coloredComponents, img.size(), false);
-
     bool usedWhiteCanny = false;
-
     if (face.area == 0) {
         face = findWhiteFaceWithCanny(img, H, S, V, showDebugWindows);
         usedWhiteCanny = true;
     }
-
     if (face.area > 0 && face.colorName != "WHITE") {
         face.colorName = dominantColorInsideBox(img, H, S, V, face.bbox);
     }
-
     Mat_<Vec3b> result = drawFaceAndSimpleGrid(img, face);
-
     if (showDebugWindows) {
         imshow("1 Original resized", img);
         imshow("2 H channel", H);
         imshow("3 S channel", S);
         imshow("4 V channel", V);
-
         if (!usedWhiteCanny) {
             imshow("5 Colored mask", coloredMask);
             imshow("6 Clean colored mask", cleanColoredMask);
             displayLabels(coloredLabels, "7 Colored connected components");
         }
     }
-
     if (printInfo) {
         if (!usedWhiteCanny) {
             printComponents("Colored components", coloredComponents);
         }
-
         printFace(face);
     }
-
     return result;
 }
 bool tryOpenCamera(VideoCapture& cap)
 {
     vector<int> cameraIndexes = {0, 1, 2, 3};
     vector<int> backends = {CAP_AVFOUNDATION, CAP_ANY};
-
     for (int backend : backends) {
         for (int index : cameraIndexes) {
             cout << "Trying camera index " << index << " with backend " << backend << endl;
-
             cap.open(index, backend);
-
             if (!cap.isOpened()) {
                 cap.release();
                 continue;
             }
-
             cap.set(CAP_PROP_FRAME_WIDTH, 640);
             cap.set(CAP_PROP_FRAME_HEIGHT, 480);
             cap.set(CAP_PROP_FPS, 30);
-
-            // Camera warm-up. Some webcams return empty frames at first.
             Mat frame;
-
             for (int k = 0; k < 30; k++) {
                 cap.read(frame);
                 waitKey(30);
-
                 if (!frame.empty()) {
                     cout << "Camera works with index " << index << endl;
                     return true;
                 }
             }
-
             cout << "Camera opened, but no valid frames." << endl;
             cap.release();
         }
     }
-
     return false;
 }
 
@@ -4123,20 +3794,16 @@ bool readValidFrame(VideoCapture& cap, Mat& frame)
 {
     for (int k = 0; k < 10; k++) {
         cap.read(frame);
-
         if (!frame.empty()) {
             return true;
         }
-
         waitKey(20);
     }
-
     return false;
 }
 void project()
 {
     int op;
-
     do {
         cout << "\nPROJECT MENU:" << endl;
         cout << "1 - Run on images from Project/ folder" << endl;
@@ -4144,7 +3811,6 @@ void project()
         cout << "0 - Exit project" << endl;
         cout << "Option: ";
         cin >> op;
-
         switch (op) {
             case 1:
             {
@@ -4158,79 +3824,51 @@ void project()
                 };
 
                 for (const string& filename : filenames) {
-                    cout << "\n===== " << filename << " =====" << endl;
-
+                    cout << filename << endl;
                     Mat_<Vec3b> img = imread(filename);
-
-                    if (img.empty()) {
-                        cout << "Could not load: " << filename << endl;
-                        continue;
-                    }
-
                     Mat_<Vec3b> result = processRubikFrame(img, true, true);
-
                     imshow("8 Detected face and simple 3x3 grid", result);
-
                     waitKey(0);
                     destroyAllWindows();
                 }
-
                 break;
             }
-
             case 2:
             {
                 VideoCapture cap;
-
                 if (!tryOpenCamera(cap)) {
-                    cout << "Could not open a working camera." << endl;
-                    cout << "Check macOS camera permission for CLion / Terminal." << endl;
+                    cout << "Could not open a working camera" << endl;
                     break;
                 }
-
-                cout << "Camera opened." << endl;
-                cout << "Press ESC or q to exit live mode." << endl;
-
                 while (true) {
                     Mat frame;
-
                     if (!readValidFrame(cap, frame)) {
-                        cout << "Could not read valid frame from camera." << endl;
+                        cout << "Could not read valid frame from camera" << endl;
                         break;
                     }
-
                     Mat_<Vec3b> img = frame;
-
                     Mat_<Vec3b> result = processRubikFrame(img, false, false);
-
                     imshow("Live Rubik detection", result);
-
                     char key = (char)waitKey(1);
-
                     if (key == 27 || key == 'q' || key == 'Q') {
                         break;
                     }
                 }
-
                 cap.release();
                 destroyAllWindows();
-
                 break;
             }
-
             case 0:
             {
-                cout << "Exit project." << endl;
+                cout << "Exit project" << endl;
                 break;
             }
-
             default:
             {
-                cout << "Invalid option." << endl;
+                cout << "Invalid option" << endl;
                 break;
             }
         }
-
     } while (op != 0);
 }
 
