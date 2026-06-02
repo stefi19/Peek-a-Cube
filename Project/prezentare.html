@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Peek-a-Cube: Rubik's Cube Face Detection</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#e6edf3;height:100vh;overflow:hidden;display:flex;flex-direction:column}
+#progress-bar{height:3px;background:#21262d}
+#progress-fill{height:100%;background:linear-gradient(90deg,#58a6ff,#3fb950);transition:width .5s}
+#slide-wrap{flex:1;display:grid;grid-template-columns:1fr 340px;overflow:hidden;transition:grid-template-columns .6s}
+#slide-wrap.final{grid-template-columns:1fr}
+#slide-wrap.final #cube-panel{border-left:none}
+#content-area{padding:40px 48px;display:flex;flex-direction:column;justify-content:center;overflow-y:auto;overflow-x:hidden}
+#slide-wrap.final #content-area{padding:0;align-items:center;justify-content:center;gap:0}
+#final-wrapper{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:60px;width:100%;height:100%}
+#final-thank-you{text-align:center;font-size:52px;font-weight:700;color:#f0f6fc;line-height:1.3}
+#final-thank-you span{color:#3fb950;display:block;margin-top:16px;font-size:58px}
+#cube-panel{background:#161b22;border-left:1px solid #30363d;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px 16px;transition:all .6s;overflow-y:auto;max-height:100%}
+#slide-wrap.final #cube-panel{width:100%;height:100%;background:transparent;border:none;padding:0;gap:0;justify-content:center}
+#cube-canvas{display:block;border-radius:14px;transition:all .6s;flex-shrink:0}
+#slide-wrap.final #cube-canvas{width:500px;height:500px;border-radius:0}
+#cube-label{font-size:13px;color:#8b949e;text-align:center;letter-spacing:.04em;min-height:20px;transition:color .4s;display:block;flex-shrink:0}
+#slide-wrap.final #cube-label{display:none}
+#cube-label.solving{color:#3fb950}
+#cube-label.scrambled{color:#8b949e}
+#cube-label.done{color:#ffd500;font-weight:700}
+#move-badge{font-size:22px;font-weight:900;letter-spacing:.08em;color:#58a6ff;min-height:28px;text-align:center;transition:all .3s;display:block;flex-shrink:0}
+#slide-wrap.final #move-badge{display:none}
+#nav-bar{background:#161b22;border-top:1px solid #30363d;display:flex;align-items:center;justify-content:space-between;padding:12px 32px;height:60px}
+.nav-btn{background:#238636;color:#fff;border:none;border-radius:8px;padding:10px 28px;font-size:15px;font-weight:600;cursor:pointer;transition:background .2s,opacity .2s}
+.nav-btn:hover:not(:disabled){background:#2ea043}
+.nav-btn:disabled{opacity:.28;cursor:default}
+#slide-counter{color:#8b949e;font-size:14px}
+.slide-tag{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#58a6ff;margin-bottom:12px;display:block}
+#slide-wrap.final .slide-tag{display:none}
+.slide-title{font-size:28px;font-weight:700;line-height:1.2;margin-bottom:16px;color:#f0f6fc;display:block}
+#slide-wrap.final .slide-title{display:none}
+.slide-title span{color:#58a6ff}
+.slide-body{font-size:14px;line-height:1.7;color:#c9d1d9;max-width:700px}
+#slide-wrap.final .slide-body{display:none}
+.slide-body p{margin-bottom:10px}
+.slide-body ul{padding-left:20px;margin-bottom:10px;list-style-position:outside}
+.slide-body li{margin-bottom:8px;line-height:1.6}
+.slide-body strong{color:#f0f6fc}
+.slide-body em{color:#ffa657;font-style:normal;font-weight:600}
+.code-block{background:#0d1117;border:1px solid #30363d;border-left:3px solid #58a6ff;border-radius:8px;padding:12px 16px;margin:10px 0;font-family:'Cascadia Code','Fira Code',monospace;font-size:12px;line-height:1.6;overflow-x:auto;color:#e6edf3;max-height:200px;overflow-y:auto}
+.kw{color:#ff7b72}.ty{color:#79c0ff}.fn{color:#d2a8ff}.val{color:#a5d6ff}.cmt{color:#8b949e;font-style:italic}.str{color:#a5d6ff}.num{color:#a5d6ff}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:10px 0}
+.three-col{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin:10px 0}
+.info-box{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:12px 14px;font-size:13px}
+.info-box h4{color:#58a6ff;font-size:11px;text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px;font-weight:700}
+.info-box p{color:#c9d1d9;line-height:1.55}
+.pill{display:inline-block;border-radius:20px;padding:2px 11px;font-size:11px;font-weight:700;white-space:nowrap;flex-shrink:0;margin-top:1px;margin-right:4px}
+.pill.blue{background:#1f6feb;color:#fff}
+.pill.green{background:#238636;color:#fff}
+.pill.orange{background:#9e6a03;color:#ffa657}
+.pill.red{background:#8e1519;color:#ff7b72}
+.pill.yellow{background:#6a5800;color:#f5e642}
+.pill.purple{background:#6e40aa;color:#fff}
+.hl{display:flex;align-items:flex-start;gap:12px;margin-bottom:9px}
+.hl p{margin:0;line-height:1.55}
+.chart{background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:12px;margin:10px 0;overflow-x:auto}
+.grid-2x2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}
+.slide-in{animation:slideIn .3s ease}
+@keyframes slideIn{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:none}}
+svg{background:transparent;max-width:100%;height:auto}
+.legend{font-size:12px;color:#8b949e;margin-top:6px}
+</style>
+</head>
+<body>
+<div id="progress-bar"><div id="progress-fill"></div></div>
+<div id="slide-wrap">
+  <div id="content-area"></div>
+  <div id="cube-panel">
+    <div id="move-badge"></div>
+    <canvas id="cube-canvas" width="290" height="290"></canvas>
+    <div id="cube-label" class="scrambled">Initializing...</div>
+  </div>
+</div>
+<div id="nav-bar">
+  <button class="nav-btn" id="btn-prev" onclick="go(-1)">← Back</button>
+  <span id="slide-counter"></span>
+  <button class="nav-btn" id="btn-next" onclick="go(+1)">Next →</button>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.134.0/build/three.min.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════════════
+//  THREE.JS RUBIK CUBE
+// ═══════════════════════════════════════════════════════════════════
+
+const COL = {
+  W:0xf5f5f5, Y:0xffd500, O:0xff5800,
+  R:0xc41e3a, G:0x009b48, B:0x0051a2,
+  X:0x141414,
+};
+
+function cubieMats(x, y, z) {
+  return [
+    x=== 1?COL.R:COL.X,  x===-1?COL.O:COL.X,
+    y=== 1?COL.W:COL.X,  y===-1?COL.Y:COL.X,
+    z=== 1?COL.B:COL.X,  z===-1?COL.G:COL.X,
+  ].map(c => new THREE.MeshLambertMaterial({color:c}));
+}
+
+const cv = document.getElementById('cube-canvas');
+const renderer = new THREE.WebGLRenderer({canvas:cv, antialias:true, alpha:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(cv.width, cv.height);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(36, cv.width/cv.height, 0.1, 100);
+camera.position.set(5.2, 4.0, 5.2);
+camera.lookAt(0, 0, 0);
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+const sun = new THREE.DirectionalLight(0xffffff, 0.90);
+sun.position.set(7, 10, 8); scene.add(sun);
+const fill = new THREE.DirectionalLight(0xffffff, 0.28);
+fill.position.set(-5, -4, -6); scene.add(fill);
+
+const outer = new THREE.Group(); scene.add(outer);
+const inner = new THREE.Group(); outer.add(inner);
+
+const cubies = [];
+for (let x=-1; x<=1; x++) for (let y=-1; y<=1; y++) for (let z=-1; z<=1; z++) {
+  if (!x && !y && !z) continue;
+  const m = new THREE.Mesh(new THREE.BoxGeometry(0.91,0.91,0.91), cubieMats(x,y,z));
+  m.position.set(x, y, z);
+  inner.add(m); cubies.push(m);
+}
+
+const DEF = {
+  'U' :{a:'y',l: 1,ang:-Math.PI/2},  "U'":{a:'y',l: 1,ang: Math.PI/2},
+  'D' :{a:'y',l:-1,ang: Math.PI/2},  "D'":{a:'y',l:-1,ang:-Math.PI/2},
+  'R' :{a:'x',l: 1,ang:-Math.PI/2},  "R'":{a:'x',l: 1,ang: Math.PI/2},
+  'L' :{a:'x',l:-1,ang: Math.PI/2},  "L'":{a:'x',l:-1,ang:-Math.PI/2},
+  'F' :{a:'z',l: 1,ang:-Math.PI/2},  "F'":{a:'z',l: 1,ang: Math.PI/2},
+  'B' :{a:'z',l:-1,ang: Math.PI/2},  "B'":{a:'z',l:-1,ang:-Math.PI/2},
+};
+
+const inv  = m => m.endsWith("'") ? m.slice(0,-1) : m+"'";
+const ease = t => t<.5 ? 2*t*t : -1+(4-2*t)*t;
+
+function applySync(name) {
+  const {a, l, ang} = DEF[name];
+  const layer = cubies.filter(c => Math.abs(c.position[a]-l) < 0.45);
+  const pivot = new THREE.Object3D();
+  inner.add(pivot);
+  layer.forEach(c => { inner.remove(c); pivot.add(c); });
+  pivot.rotation[a] = ang;
+  pivot.updateMatrixWorld(true);
+  layer.forEach(c => {
+    inner.attach(c);
+    c.position.x = Math.round(c.position.x);
+    c.position.y = Math.round(c.position.y);
+    c.position.z = Math.round(c.position.z);
+    c.quaternion.normalize();
+  });
+  inner.remove(pivot);
+}
+
+function doMove(name, dur) {
+  return new Promise(resolve => {
+    const {a, l, ang} = DEF[name];
+    const layer = cubies.filter(c => Math.abs(c.position[a]-l) < 0.45);
+    const pivot = new THREE.Object3D();
+    inner.add(pivot);
+    layer.forEach(c => { inner.remove(c); pivot.add(c); });
+    const t0 = performance.now();
+    (function tick() {
+      const t = Math.min((performance.now()-t0)/dur, 1);
+      pivot.rotation[a] = ang * ease(t);
+      if (t < 1) { requestAnimationFrame(tick); return; }
+      pivot.rotation[a] = ang;
+      pivot.updateMatrixWorld(true);
+      layer.forEach(c => {
+        inner.attach(c);
+        c.position.x = Math.round(c.position.x);
+        c.position.y = Math.round(c.position.y);
+        c.position.z = Math.round(c.position.z);
+        c.quaternion.normalize();
+      });
+      inner.remove(pivot);
+      resolve();
+    })();
+  });
+}
+
+const SOLVE = ["U","R'","F","U'","B","L'","D","R","F'","U","L","B'","D'","R'","B","D","L","F","U","R","D'","L'","B'","U'","F'"];
+
+[...SOLVE].reverse().map(inv).forEach(applySync);
+
+let spinT = 0;
+(function renderLoop() {
+  requestAnimationFrame(renderLoop);
+  spinT += 0.010;
+  outer.rotation.y = spinT;
+  outer.rotation.x = 0.28 + Math.sin(spinT * 0.33) * 0.07;
+  renderer.render(scene, camera);
+})();
+
+// ═══════════════════════════════════════════════════════════════════
+//  SLIDES
+// ═══════════════════════════════════════════════════════════════════
+
+const slides = [
+{
+  tag:'Project PI',
+  title:'<span>Peek-a-Cube</span><br>Rubik\'s Cube Face Detection',
+  html:`
+  <p><strong>Goal:</strong> Given an image or video frame containing a Rubik's cube, automatically detect which face is visible and display a 3×3 grid showing the color of each sticker.</p>
+  <div class="two-col" style="margin-top:12px">
+    <div class="info-box"><h4>Input</h4><p>Static image or live camera stream. Cube held in hand, partially covered, variable lighting conditions.</p></div>
+    <div class="info-box"><h4>Output</h4><p>Bounding box around detected face + 3×3 grid + dominant color label.</p></div>
+  </div>
+  <div class="info-box" style="margin-top:12px"><h4>6 Colors Supported</h4>
+  <div class="grid-2x2">
+    <div style="background:#ff5800;width:100%;height:30px;border-radius:4px;border:1px solid #30363d"></div>
+    <div style="background:#c41e3a;width:100%;height:30px;border-radius:4px;border:1px solid #30363d"></div>
+    <div style="background:#ffd500;width:100%;height:30px;border-radius:4px;border:1px solid #30363d"></div>
+    <div style="background:#009b48;width:100%;height:30px;border-radius:4px;border:1px solid #30363d"></div>
+    <div style="background:#0051a2;width:100%;height:30px;border-radius:4px;border:1px solid #30363d"></div>
+    <div style="background:#f0f0f0;width:100%;height:30px;border-radius:4px;border:1px solid #30363d"></div>
+  </div>
+  </div>`
+},
+{
+  tag:'Problem Definition',
+  title:'What challenges must we solve?',
+  html:`
+  <p>A standard Rubik's cube has <strong>6 faces × 9 stickers</strong> each. When held before a camera, we see one dominant face and parts of two others. Our goal: identify which face and extract the 3×3 color grid.</p>
+  <div class="hl"><span class="pill green">Challenge 1: Skin Exclusion</span>
+  <p>The hand holding the cube has colors overlapping orange/red stickers. Must exclude skin without losing cube colors.</p></div>
+  <div class="hl"><span class="pill orange">Challenge 2: Sticker Boundaries</span>
+  <p>Stickers are separated by thin black lines. After color segmentation, must unite stickers into one blob per face.</p></div>
+  <div class="hl"><span class="pill yellow">Challenge 3: White Face Detection</span>
+  <p>White has low saturation → fails HSV thresholds. Need alternative: Canny edge detection on brightness channel.</p></div>
+  <div class="hl"><span class="pill red">Challenge 4: Color Separation</span>
+  <p>Orange, red, yellow are adjacent on hue circle. Boundaries must be precise using RGB ratios + hue ranges.</p></div>`
+},
+{
+  tag:'Color Spaces',
+  title:'Why <span>HSV</span> instead of RGB?',
+  html:`
+  <p><strong>RGB</strong> couples hue to brightness—same yellow looks different under different lighting. <strong>HSV</strong> decouples them:</p>
+  <ul>
+    <li><strong>H (Hue):</strong> Position on color wheel (0°–360°). <em>Invariant to lighting.</em></li>
+    <li><strong>S (Saturation):</strong> Color purity (0=gray, 100=pure). <em>High for cube stickers, low for skin.</em></li>
+    <li><strong>V (Value):</strong> Brightness (0=black, 100=white). <em>Low for black separator lines (V < 50).</em></li>
+  </ul>
+  <p style="margin-top:10px"><strong>Key insight:</strong> If lighting doubles (bright room → sunlight), RGB triples per channel, but H stays the same. V doubles, S might change slightly. HSV robustly handles this.</p>
+  <div class="chart">
+    <svg viewBox="0 0 400 180" style="width:100%;height:auto">
+      <!-- Hue wheel annotation -->
+      <circle cx="100" cy="90" r="70" fill="none" stroke="#30363d" stroke-width="1"/>
+      <g style="font-size:11px;fill:#8b949e">
+        <text x="95" y="15" text-anchor="middle">0° Red</text>
+        <text x="175" y="35" text-anchor="start">25° Orange</text>
+        <text x="175" y="75" text-anchor="start">55° Yellow</text>
+        <text x="175" y="120" text-anchor="start">120° Green</text>
+        <text x="70" y="170" text-anchor="middle">220° Blue</text>
+      </g>
+      <!-- Saturation bar -->
+      <defs>
+        <linearGradient id="satGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" style="stop-color:#555555;stop-opacity:1" />
+          <stop offset="100%" style="stop-color:#ff5800;stop-opacity:1" />
+        </linearGradient>
+      </defs>
+      <rect x="250" y="20" width="130" height="40" fill="url(#satGrad)" stroke="#30363d" stroke-width="1" rx="2"/>
+      <text x="250" y="75" style="font-size:11px;fill:#8b949e">S: Gray ← → Pure</text>
+      <!-- Value bar -->
+      <defs>
+        <linearGradient id="valGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" style="stop-color:#000000;stop-opacity:1" />
+          <stop offset="100%" style="stop-color:#ff5800;stop-opacity:1" />
+        </linearGradient>
+      </defs>
+      <rect x="250" y="100" width="130" height="40" fill="url(#valGrad)" stroke="#30363d" stroke-width="1" rx="2"/>
+      <text x="250" y="155" style="font-size:11px;fill:#8b949e">V: Dark ← → Bright</text>
+    </svg>
+  </div>`
+},
+{
+  tag:'HSV Channels',
+  title:'Hue channel <span>visualization</span>',
+  html:`<img src="./H channel.png" style="width:100%;max-width:700px;border-radius:8px;border:1px solid #30363d;margin-top:10px"/><p style="margin-top:10px;font-size:13px;color:#8b949e"><strong>H Channel:</strong> Bright areas = specific hues. Darker = less saturated colors or grayscale. Notice how orange stickers pop out, white face is dark (low saturation).</p>`
+},
+{
+  tag:'HSV Channels',
+  title:'Saturation channel <span>visualization</span>',
+  html:`<img src="./S channel.png" style="width:100%;max-width:700px;border-radius:8px;border:1px solid #30363d;margin-top:10px"/><p style="margin-top:10px;font-size:13px;color:#8b949e"><strong>S Channel:</strong> Bright = highly saturated (cube stickers). Dark = low saturation (skin, white face). This channel alone separates stickers from hand.</p>`
+},
+{
+  tag:'HSV Channels',
+  title:'Value channel <span>visualization</span>',
+  html:`<img src="./V channel.png" style="width:100%;max-width:700px;border-radius:8px;border:1px solid #30363d;margin-top:10px"/><p style="margin-top:10px;font-size:13px;color:#8b949e"><strong>V Channel:</strong> Brightness of each pixel. Black separator lines between stickers show as dark. White stickers bright. Used later for Canny edge detection.</p>`
+},
+{
+  tag:'Color Selection Logic',
+  title:'Why these specific <span>HSV thresholds?</span>',
+  html:`
+  <p>Each Rubik color needs <strong>separate detection function</strong> with H range + RGB ratio checks + S/V bounds. Here's the <strong>Yellow example</strong>—most restrictive:</p>
+  <div class="code-block"><span class="kw">bool</span> <span class="fn">isYellowRubikPixel</span>(<span class="ty">int</span> H, S, V, R, G, B) {
+  <span class="kw">bool</span> hueOK   = H >= <span class="val">28</span> && H &lt;= <span class="val">82</span>;   <span class="cmt">// 40°–117° yellow band</span>
+  <span class="kw">bool</span> ratioOK = gRatio >= <span class="val">0.70</span> && gRatio &lt;= <span class="val">1.20</span>; <span class="cmt">// G≈R for yellow</span>
+  <span class="kw">bool</span> satOK   = S >= <span class="val">45</span> && V >= <span class="val">70</span>;      <span class="cmt">// saturated, bright</span>
+  <span class="kw">return</span> hueOK && rgbOK && ratioOK && satOK;
+}</div>
+  <div class="two-col">
+    <div class="info-box"><h4>Why 40°–117° for Yellow?</h4><p>Pure yellow ≈ 60°. Range includes ±57° buffer for manufacturing variation, lighting shifts, camera white balance.</p></div>
+    <div class="info-box"><h4>Why G/R ∈ [0.70, 1.20]?</h4><p><strong>Yellow = high G + high R.</strong> For pure yellow, G ≈ R (ratio ≈ 1.0). Orange has G &lt; R (ratio &lt; 0.8). This ratio separates them.</p></div>
+  </div>
+  <p style="margin-top:10px"><strong>Detection order matters!</strong> Check <em>Yellow first</em>, then Orange, then Red. If Orange came first, it would steal yellow pixels (both have high G/R &gt; 0.43).</p>`
+},
+{
+  tag:'Skin Pixel Exclusion',
+  title:'The <span>isSkinPixel</span> challenge',
+  html:`
+  <p>Human skin is a goldmine for color classification—it's abundant, consistent, and <strong>overlaps orange/red stickers</strong>. Challenge: exclude skin without losing cube pixels.</p>
+  <div class="code-block"><span class="kw">bool</span> <span class="fn">isSkinPixel</span>(<span class="ty">int</span> H, S, V, R, G, B) {
+  <span class="kw">bool</span> hueSkin   = H >= <span class="val">0</span> && H &lt;= <span class="val">35</span>;           <span class="cmt">// skin hue range</span>
+  <span class="kw">bool</span> rgbSkin   = R > G && G >= B-<span class="val">5</span> && R > B+<span class="val">15</span>;
+  <span class="kw">bool</span> ratioSkin = gRatio >= <span class="val">0.48</span> && gRatio &lt;= <span class="val">0.95</span>
+                 && bRatio >= <span class="val">0.25</span> && bRatio &lt;= <span class="val">0.85</span>;
+  <span class="kw">bool</span> satSkin   = S >= <span class="val">15</span> && S &lt;= <span class="val">135</span>;          <span class="cmt">// skin has low sat</span>
+  <span class="kw">return</span> hueSkin && rgbSkin && ratioSkin && satSkin;
+}</div>
+  <div class="three-col" style="margin-top:10px">
+    <div class="info-box"><h4>H ≤ 35 (Hue)</h4><p>Skin hues are 0°–35° (red-orange). Orange stickers: 7°–45°. Overlap at 7°–35°.</p></div>
+    <div class="info-box"><h4>S ≤ 135 (Saturation)</h4><p><strong>KEY:</strong> Skin saturation is 15–135. Cube stickers: S &gt; 140. This gap (<em>S ≤ 135 vs S &gt; 140</em>) separates 95% of cases.</p></div>
+    <div class="info-box"><h4>G/R ∈ [0.48, 0.95]</h4><p>Skin has balanced G:R. Red stickers: G/R &lt; 0.43. This second check catches red stickers that might sneak past saturation.</p></div>
+  </div>`
+},
+{
+  tag:'Color Segmentation',
+  title:'Building the <span>colored mask</span>',
+  html:`
+  <p>Loop through every pixel, convert BGR → HSV, apply <code>isColoredRubikPixel</code> (which chains skin exclusion + color checks), mark in binary mask.</p>
+  <div class="code-block"><span class="kw">bool</span> <span class="fn">isColoredRubikPixel</span>(<span class="ty">int</span> H, S, V, R, G, B) {
+  <span class="kw">if</span> (<span class="fn">isSkinPixel</span>(...)) <span class="kw">return false</span>; <span class="cmt">// first gate</span>
+  <span class="kw">if</span> (<span class="fn">isYellowRubikPixel</span>(...)) <span class="kw">return true</span>;
+  <span class="kw">if</span> (<span class="fn">isOrangeRubikPixel</span>(...)) <span class="kw">return true</span>;
+  <span class="kw">if</span> (<span class="fn">isRedRubikPixel</span>(...)) <span class="kw">return true</span>;
+  <span class="kw">if</span> (<span class="fn">isGreenRubikPixel</span>(...)) <span class="kw">return true</span>;
+  <span class="kw">if</span> (<span class="fn">isBlueRubikPixel</span>(...)) <span class="kw">return true</span>;
+  <span class="kw">return false</span>;
+}</div>
+  <p style="margin-top:10px"><strong>Mask encoding:</strong> 0 = object pixel (cube sticker), 255 = background. (OpenCV convention—inverted from intuition.)</p>
+  <p><strong>Result:</strong> A binary map showing where cube stickers likely are. Noisy, incomplete—next: morphology.</p>`
+},
+{
+  tag:'Segmentation Result',
+  title:'Raw colored <span>mask output</span>',
+  html:`<img src="./colored mask.png" style="width:100%;max-width:700px;border-radius:8px;border:1px solid #30363d;margin-top:10px"/><p style="margin-top:10px;font-size:13px;color:#8b949e"><strong>Colored Mask:</strong> White pixels = detected cube colors, black = background/skin. Notice noise, gaps between stickers (black separator lines), and stray hand pixels.</p>`
+},
+{
+  tag:'After Morphology',
+  title:'Cleaned mask after <span>opening & closing</span>',
+  html:`<img src="./clean colored mask.png" style="width:100%;max-width:700px;border-radius:8px;border:1px solid #30363d;margin-top:10px"/><p style="margin-top:10px;font-size:13px;color:#8b949e"><strong>Clean Mask:</strong> Opening removed noise (isolated pixels). Closing bridged separator lines. Now 9 stickers are united into one blob—ready for component analysis.</p>`
+},
+{
+  tag:'Morphological Operations',
+  title:'<span>Opening + Closing</span> cleanup',
+  html:`
+  <p>Raw mask has noise (isolated pixels) and gaps (sticker separation lines). Two sequential morphological ops clean this:</p>
+  <div class="hl"><span class="pill blue">Opening = Erode → Dilate</span>
+  <p>Erodes small noise away. 3×3 kernel. Stickers survive; dust vanishes.</p></div>
+  <div class="hl"><span class="pill green">Closing = Dilate → Erode</span>
+  <p>Dilates to bridge ~2–4px separator lines. 5×5 kernel. Stickers merge into one blob.</p></div>
+  <div class="code-block"><span class="ty">Mat</span> clean = <span class="fn">openingOp</span>(mask, strel3x3);
+clean = <span class="fn">closingOp</span>(clean, strel5x5); <span class="cmt">// unites 9 stickers into 1 blob</span></div>
+  <div class="chart">
+    <svg viewBox="0 0 500 140" style="width:100%;height:auto">
+      <text x="10" y="20" style="font-size:12px;fill:#58a6ff;font-weight:700">Raw → Opening → Closing → Result</text>
+      <!-- Raw (noisy) -->
+      <g>
+        <rect x="10" y="35" width="100" height="100" fill="none" stroke="#30363d" stroke-width="1" rx="2"/>
+        <circle cx="35" cy="65" r="8" fill="#3fb950"/>
+        <circle cx="60" cy="55" r="8" fill="#3fb950"/>
+        <circle cx="70" cy="75" r="8" fill="#3fb950"/>
+        <circle cx="2" cy="2" r="2" fill="#ff7b72"/> <!-- noise -->
+        <circle cx="95" cy="40" r="2" fill="#ff7b72"/>
+        <text x="35" y="145" text-anchor="middle" style="font-size:11px;fill:#8b949e">Raw (noisy)</text>
+      </g>
+      <!-- After Opening -->
+      <g>
+        <rect x="130" y="35" width="100" height="100" fill="none" stroke="#30363d" stroke-width="1" rx="2"/>
+        <circle cx="155" cy="65" r="8" fill="#3fb950"/>
+        <circle cx="180" cy="55" r="8" fill="#3fb950"/>
+        <circle cx="190" cy="75" r="8" fill="#3fb950"/>
+        <text x="180" y="145" text-anchor="middle" style="font-size:11px;fill:#8b949e">After Opening</text>
+      </g>
+      <!-- After Closing -->
+      <g>
+        <rect x="250" y="35" width="100" height="100" fill="none" stroke="#30363d" stroke-width="1" rx="2"/>
+        <ellipse cx="170" cy="75" rx="35" ry="40" fill="#3fb950" cx="170" cy="75"/>
+        <text x="300" y="145" text-anchor="middle" style="font-size:11px;fill:#8b949e">After Closing</text>
+      </g>
+      <!-- Expected Result -->
+      <g>
+        <rect x="370" y="35" width="100" height="100" fill="none" stroke="#30363d" stroke-width="1" rx="2"/>
+        <rect x="380" y="50" width="80" height="75" fill="#3fb950" rx="2"/>
+        <text x="420" y="145" text-anchor="middle" style="font-size:11px;fill:#8b949e">One blob (face)</text>
+      </g>
+    </svg>
+  </div>`
+},
+{
+  tag:'Connected Components',
+  title:'<span>BFS</span> labeling',
+  html:`
+  <p>After morphology, apply Breadth-First Search to find and label each connected blob. 8-connectivity (diagonal neighbors included).</p>
+  <div class="code-block"><span class="fn">bfs_connected_components</span>(clean, labels, <span class="kw">true</span>);
+<span class="cmt">// true = 8-connectivity</span>
+
+<span class="cmt">// For each unlabeled object pixel (value 0 in mask):</span>
+<span class="cmt">// 1. Assign new label</span>
+<span class="cmt">// 2. Expand to all 8 neighbors in queue</span>
+<span class="cmt">// 3. Mark visited</span></div>
+  <p><strong>Result:</strong> <code>Mat_&lt;int&gt; labels</code>—each pixel now contains its blob ID (0 = background, 1..N = blob labels).</p>
+  <p><strong>Why 8-connectivity?</strong> Stickers touch diagonally under perspective. If we used 4-connectivity (up/down/left/right only), rotated lines would be two separate blobs.</p>`
+},
+{
+  tag:'Component Labeling',
+  title:'<span>Connected components</span> visualization',
+  html:`<img src="./connected components.png" style="width:100%;max-width:700px;border-radius:8px;border:1px solid #30363d;margin-top:10px"/><p style="margin-top:10px;font-size:13px;color:#8b949e"><strong>Labeled Blobs:</strong> Each color represents a distinct blob (the 9 stickers form one blob). BFS assigns unique labels. We extract area, bounding box, center of mass for each.</p>`
+},
+{
+  tag:'Component Features',
+  title:'What do we compute <span>per blob?</span>',
+  html:`
+  <p>Single O(N) pass: for each blob, extract:</p>
+  <div class="code-block"><span class="kw">struct</span> <span class="ty">ComponentInfo</span> {
+  <span class="ty">int</span>     area;        <span class="cmt">// pixel count</span>
+  <span class="ty">float</span>   aspect;      <span class="cmt">// width / height</span>
+  <span class="ty">float</span>   bboxDensity; <span class="cmt">// area / (w*h bbox)</span>
+  <span class="ty">float</span>   thinness;    <span class="cmt">// 4π·area/perim²</span>
+  <span class="ty">Rect</span>    bbox;        <span class="cmt">// bounding box</span>
+  <span class="ty">Point2f</span> center;      <span class="cmt">// center of mass</span>
+  <span class="ty">int</span>     meanH, meanS, meanV;
+  <span class="ty">string</span>  color;       <span class="cmt">// "RED", "BLUE", etc.</span>
+};</div>
+  <div class="three-col" style="margin-top:10px">
+    <div class="info-box"><h4>aspect</h4><p>width÷height. Cube faces ≈ 0.8–1.2 (near square). Long thin blobs → noise.</p></div>
+    <div class="info-box"><h4>bboxDensity</h4><p>How much blob fills its bounding box. Faces: &gt;0.5. Random shapes: &lt;0.3.</p></div>
+    <div class="info-box"><h4>thinness</h4><p>4π·A/P². Range (0,1]. Circle=1.0. Thin shapes &lt;0.5.</p></div>
+  </div>`
+},
+{
+  tag:'Face Selection Criteria',
+  title:'<span>isPossibleCubeFace</span> filters',
+  html:`
+  <p>Not all blobs are cube faces. Geometric constraints eliminate obvious noise:</p>
+  <div class="code-block"><span class="kw">bool</span> <span class="fn">isPossibleCubeFace</span>(<span class="ty">ComponentInfo</span> c, <span class="ty">int</span> imgW, <span class="ty">int</span> imgH) {
+  <span class="ty">int</span> imgArea = imgW * imgH;
+  <span class="kw">if</span> (c.area &lt; <span class="val">0.008</span> * imgArea) <span class="kw">return false</span>; <span class="cmt">// too small</span>
+  <span class="kw">if</span> (c.area > <span class="val">0.40</span> * imgArea) <span class="kw">return false</span>;  <span class="cmt">// too large</span>
+  <span class="kw">if</span> (c.bbox.width &lt; imgW * <span class="val">0.12</span>) <span class="kw">return false</span>;  <span class="cmt">// too narrow</span>
+  <span class="kw">if</span> (c.aspect &lt; <span class="val">0.50</span> || c.aspect > <span class="val">2.40</span>) <span class="kw">return false</span>;
+  <span class="kw">if</span> (c.bboxDensity &lt; <span class="val">0.16</span>) <span class="kw">return false</span>;     <span class="cmt">// not compact</span>
+  <span class="kw">if</span> (c.color == <span class="str">"UNKNOWN"</span>) <span class="kw">return false</span>;
+  <span class="kw">return true</span>;
+}</div>
+  <div class="info-box" style="margin-top:10px"><h4>Threshold Rationale</h4>
+  <p><strong>0.008–0.40:</strong> A Rubik face is 8–40% of frame depending on distance/angle. <strong>12% width min:</strong> Must be wide enough to resolve into 3×3 grid later. <strong>0.5–2.4 aspect:</strong> Accounts for perspective; cube isn't always frontal.</p></div>`
+},
+{
+  tag:'Scoring Best Face',
+  title:'<span>findBestComponentFace</span> algorithm',
+  html:`
+  <p>Multiple blobs might pass filters. Score each and pick the winner:</p>
+  <div class="code-block"><span class="fn">score</span> = <span class="val">20.0</span> * areaFraction
+       + <span class="val">2.0</span> * bboxDensity
+       + <span class="val">0.35</span> * rightBonus
+       - <span class="val">0.5</span> * aspectPenalty;
+
+<span class="ty">float</span> rightBonus = (c.center.x > imgW/<span class="val">2</span>) ? <span class="val">0.35f</span> : <span class="val">0.0f</span>;
+<span class="ty">float</span> aspectPenalty = <span class="fn">fabs</span>(c.aspect - <span class="val">1.0f</span>);</div>
+  <div class="two-col" style="margin-top:10px">
+    <div class="info-box"><h4>Why rightBonus?</h4><p>In typical setups, hand+cube occupies right half of frame. Bonus breaks ties.</p></div>
+    <div class="info-box"><h4>Why aspectPenalty?</h4><p>Cube faces under frontal view are ~square. Aspect 0.8–1.2 is ideal; deviations cost points.</p></div>
+  </div>
+  <p style="margin-top:10px"><strong>Result:</strong> Blob with highest score becomes the detected face. Fallback: if no face found → try Canny edge detection for white.</p>`
+},
+{
+  tag:'Color Re-voting',
+  title:'<span>dominantColorInsideBox</span> refinement',
+  html:`
+  <p>Detected bbox might include pixels from neighboring stickers or shadow. Re-classify every pixel inside bbox and take <strong>majority vote</strong>:</p>
+  <div class="code-block"><span class="kw">std::map</span>&lt;<span class="ty">string</span>, <span class="ty">int</span>&gt; votes;
+<span class="ty">int</span> margin = bbox.width / <span class="val">8</span>; <span class="cmt">// exclude edges</span>
+
+<span class="kw">for</span> (<span class="ty">int</span> i = y1 + margin; i &lt; y2 - margin; i++)
+  <span class="kw">for</span> (<span class="ty">int</span> j = x1 + margin; j &lt; x2 - margin; j++) {
+    <span class="ty">string</span> color = <span class="fn">classifyRubikColor</span>(H[i][j], S[i][j], V[i][j], R, G, B);
+    votes[color]++;
+  }
+
+<span class="ty">string</span> result = <span class="fn">max_element</span>(votes)-&gt;first;</div>
+  <div class="info-box" style="margin-top:10px"><h4>Margin Exclusion</h4>
+  <p>We exclude 1/8 of bbox edge all around. Boundary pixels mix with adjacent stickers—keep central region only.</p></div>`
+},
+{
+  tag:'White Face Detection',
+  title:'<span>Canny Edge</span> detection theory',
+  html:`
+  <p>White has S &lt; 90 → fails all color thresholds. Instead, detect it via <strong>grid structure</strong> using Canny edges on Value channel (brightness).</p>
+  <p><strong>Canny Algorithm (5 steps):</strong></p>
+  <ol style="margin-left:20px;margin-top:8px">
+    <li><strong>Gaussian Blur</strong> (5×5, σ=1.0) → reduce noise</li>
+    <li><strong>Compute Gradients</strong> (Sobel X, Y) → edge magnitude &amp; direction</li>
+    <li><strong>Non-Maximum Suppression</strong> → thin edges to 1px</li>
+    <li><strong>Edge Linking</strong> → connect weak edges near strong ones</li>
+    <li><strong>Output:</strong> Binary edge map</li>
+  </ol>
+  <p style="margin-top:10px">Applied to <code>V</code> channel only (not color). Black separator lines (V ≈ 30) ↔ white stickers (V ≈ 240) = high gradient.</p>
+  <div class="code-block"><span class="fn">GaussianBlur</span>(V_channel, blurred, <span class="ty">Size</span>(<span class="val">5</span>,<span class="val">5</span>), <span class="val">1.0</span>);
+<span class="fn">Canny</span>(blurred, edges, <span class="val">35</span>, <span class="val">110</span>); <span class="cmt">// low=35, high=110</span></div>
+  <div class="info-box" style="margin-top:10px"><h4>Threshold Choice: low=35, high=110</h4>
+  <p><strong>35:</strong> Weak edges from sticker texture/faint shadows. <strong>110:</strong> Strong edges from black grid lines. Hysteresis links them.</p></div>`
+},
+{
+  tag:'Canny Implementation Details',
+  title:'How <span>Canny</span> works step-by-step',
+  html:`
+  <p><strong>Step 1: Gaussian Blur</strong> → reduce noise</p>
+  <div class="code-block">kernel = [[1,2,1], [2,4,2], [1,2,1]] / 16  <span class="cmt">// normalized 3×3</span>
+blurred[i][j] = Σ kernel * neighborhood  <span class="cmt">// convolution</span></div>
+
+  <p style="margin-top:8px"><strong>Step 2: Sobel Gradients</strong> → edge magnitude</p>
+  <div class="code-block">Gx = [[-1,0,1], [-2,0,2], [-1,0,1]] / 8   <span class="cmt">// horizontal edges</span>
+Gy = [[-1,-2,-1], [0,0,0], [1,2,1]] / 8  <span class="cmt">// vertical edges</span>
+
+magnitude[i][j] = √(Gx² + Gy²)
+direction[i][j] = atan2(Gy, Gx)  <span class="cmt">// 0°, 45°, 90°, 135°</span></div>
+
+  <p style="margin-top:8px"><strong>Step 3: Non-Maximum Suppression</strong> → thin to 1px</p>
+  <div class="code-block"><span class="cmt">// For each pixel, check perpendicular neighbors (along gradient direction)</span>
+<span class="kw">if</span> (magnitude[i][j] < magnitude[i-1][j] <span class="kw">or</span> magnitude[i][j] < magnitude[i+1][j])
+  magnitude[i][j] = <span class="val">0</span>;  <span class="cmt">// suppress if not local max</span></div>
+
+  <p style="margin-top:8px"><strong>Step 4: Hysteresis Thresholding</strong> → edge linking</p>
+  <div class="code-block"><span class="kw">if</span> (magnitude[i][j] > high_threshold) edge = <span class="val">255</span>;        <span class="cmt">// strong edge</span>
+<span class="kw">else if</span> (magnitude[i][j] > low_threshold &amp;&amp; neighbor_is_strong) edge = <span class="val">255</span>;
+<span class="kw">else</span> edge = <span class="val">0</span>;</div>`
+},
+{
+  tag:'White Face Scoring',
+  title:'Finding white face via <span>Canny</span>',
+  html:`
+  <p>After Canny, apply sliding window. Score each candidate region on:</p>
+  <ul style="margin-left:20px;margin-top:8px">
+    <li><strong>gridScore:</strong> Edges at 1/3 and 2/3 positions (where 3×3 lines should be)</li>
+    <li><strong>outerEdgeScore:</strong> Edges along perimeter (face boundary)</li>
+  </ul>
+  <div class="code-block"><span class="fn">slidingWindow</span>(edges, <span class="val">50</span>, <span class="val">500</span>) {  <span class="cmt">// sizes 50px to 500px</span>
+  <span class="ty">float</span> gridScore = <span class="val">0</span>;
+  <span class="cmt">// Count Canny pixels at grid lines (1/3, 2/3 of box width/height)</span>
+  <span class="ty">int</span> line1_h = y + h/<span class="val">3</span>, line2_h = y + <span class="val">2</span>*h/<span class="val">3</span>;
+  gridScore += <span class="fn">countEdgePixels</span>(edges, x, line1_h, w);
+  gridScore += <span class="fn">countEdgePixels</span>(edges, x, line2_h, w);
+  <span class="cmt">// Similar for vertical lines</span>
+
+  <span class="ty">float</span> outerScore = <span class="fn">countEdgePixels</span>(edges, perimeter);
+  <span class="ty">float</span> totalScore = gridScore + <span class="val">0.5</span> * outerScore;
+  candidates.push({box, totalScore});
+}</div>
+  <p style="margin-top:10px"><strong>Result:</strong> Pick box with highest score. If grid lines align with Canny edges, it's a strong match for white face.</p>`
+},
+{
+  tag:'Complete Pipeline',
+  title:'All <span>stages together</span>',
+  html:`
+  <p><strong>processRubikFrame(image)</strong> orchestrates the entire detection:</p>
+  <div class="code-block"><span class="ty">Mat</span> <span class="fn">processRubikFrame</span>(<span class="ty">Mat</span> img) {
+  <span class="cmt">// 1. Resize if needed</span>
+  img = <span class="fn">resizeIfLarge</span>(img, <span class="val">900</span>);
+
+  <span class="cmt">// 2. Color segmentation</span>
+  <span class="ty">Mat</span> mask = <span class="fn">buildColoredRubikMask</span>(img);
+
+  <span class="cmt">// 3. Morphology (clean)</span>
+  <span class="ty">Mat</span> clean = <span class="fn">openingOp</span>(mask, 3);
+  clean = <span class="fn">closingOp</span>(clean, 5);
+
+  <span class="cmt">// 4. Connected components</span>
+  <span class="ty">Mat</span> labels;
+  <span class="fn">bfs_connected_components</span>(clean, labels);
+
+  <span class="cmt">// 5. Extract features &amp; score</span>
+  <span class="ty">FaceDetectionResult</span> face = <span class="fn">findBestComponentFace</span>(labels, img);
+
+  <span class="cmt">// 6. Fallback to Canny if no colored face</span>
+  <span class="kw">if</span> (face.area == <span class="val">0</span>)
+    face = <span class="fn">findWhiteFaceWithCanny</span>(img);
+
+  <span class="cmt">// 7. Re-vote color</span>
+  face.color = <span class="fn">dominantColorInsideBox</span>(img, face.bbox);
+
+  <span class="cmt">// 8. Draw &amp; return</span>
+  <span class="kw">return</span> <span class="fn">drawFaceAndGrid</span>(img, face);
+}</div>
+  <p style="margin-top:10px">🎯 <strong>Result:</strong> One detected face + 3×3 color grid + confidence score.</p>`
+},
+{
+  tag:'Results',
+  title:'Live detection & grid extraction',
+  html:`
+  <p>The pipeline runs on:</p>
+  <ul style="margin-left:20px;margin-top:8px">
+    <li><strong>Static images</strong> (6 test images: orange, red, yellow, green, blue, white)</li>
+    <li><strong>Live camera stream</strong> (real-time per-frame processing)</li>
+  </ul>
+  <p style="margin-top:10px"><strong>Output visualization:</strong></p>
+  <ul style="margin-left:20px;margin-top:4px">
+    <li>Green bounding box around detected face</li>
+    <li>Thin grid overlay dividing face into 3×3</li>
+    <li>Dominant color label (e.g., "ORANGE")</li>
+    <li>Confidence metric (based on blob size, density, color votes)</li>
+  </ul>
+  <p style="margin-top:10px"><strong>Edge cases handled:</strong></p>
+  <ul style="margin-left:20px">
+    <li>Partial occlusion (hand covers corner)</li>
+    <li>Poor lighting (shadows, glare)</li>
+    <li>Rotated view (perspective distortion)</li>
+    <li>Multiple faces visible (picks largest/densest)</li>
+  </ul>`
+},
+{
+  tag:'Final Result',
+  title:'Complete detection <span>with grid overlay</span>',
+  html:`<img src="./final.png" style="width:100%;max-width:700px;border-radius:8px;border:1px solid #30363d;margin-top:10px"/><p style="margin-top:10px;font-size:13px;color:#8b949e"><strong>Final Output:</strong> Bounding box (green) around detected face, 3×3 grid overlay, color labels on each sticker, and confidence score displayed.</p>`
+},
+{
+  tag:'Input Image',
+  title:'Original <span>test image</span>',
+  html:`<img src="./original_resized.png" style="width:100%;max-width:700px;border-radius:8px;border:1px solid #30363d;margin-top:10px"/><p style="margin-top:10px;font-size:13px;color:#8b949e"><strong>Input:</strong> Raw image from camera or file. This is what the pipeline processes through all 16+ stages to extract the 3×3 face colors.</p>`
+},
+{
+  tag:'Thank You',
+  title:'',
+  isFinal:true,
+  html:''
+},
+];
+
+// ═══════════════════════════════════════════════════════════════════
+//  NAVIGATION
+// ═══════════════════════════════════════════════════════════════════
+
+let currentSlide = 0;
+let isMoving = false;
+const TOTAL = slides.length;
+
+async function go(dir) {
+  if (isMoving) return;
+  const next = currentSlide + dir;
+  if (next < 0 || next >= TOTAL) return;
+
+  isMoving = true;
+  document.getElementById('btn-prev').disabled = true;
+  document.getElementById('btn-next').disabled = true;
+
+  const moveName = dir > 0 ? SOLVE[currentSlide] : inv(SOLVE[next]);
+
+  const badge = document.getElementById('move-badge');
+  badge.textContent = moveName;
+  badge.style.transform = 'scale(1.4)';
+  setTimeout(() => { badge.style.transform = 'scale(1)'; }, 300);
+
+  await doMove(moveName, 520);
+
+  currentSlide = next;
+  isMoving = false;
+  renderSlide();
+}
+
+function renderSlide() {
+  const s = slides[currentSlide];
+  const isFinal = s.isFinal || false;
+  const wrap = document.getElementById('slide-wrap');
+
+  if (isFinal) {
+    wrap.classList.add('final');
+  } else {
+    wrap.classList.remove('final');
+  }
+
+  const area = document.getElementById('content-area');
+
+  if (isFinal) {
+    area.innerHTML = `
+      <div id="final-wrapper">
+        <div id="final-thank-you">
+          Thank You
+          <span>for your attention</span>
+        </div>
+      </div>`;
+  } else {
+    area.innerHTML = `
+      <div class="slide-tag slide-in">${s.tag} — ${currentSlide+1} / ${TOTAL}</div>
+      <h1 class="slide-title slide-in">${s.title}</h1>
+      <div class="slide-body slide-in">${s.html}</div>`;
+  }
+
+  document.getElementById('progress-fill').style.width = ((currentSlide+1)/TOTAL*100)+'%';
+  document.getElementById('slide-counter').textContent = `${currentSlide+1} / ${TOTAL}`;
+
+  document.getElementById('btn-prev').disabled = currentSlide === 0;
+  document.getElementById('btn-next').disabled = currentSlide === TOTAL-1;
+
+  const lbl = document.getElementById('cube-label');
+  const badge = document.getElementById('move-badge');
+
+  if (currentSlide === 0) {
+    lbl.className = 'scrambled';
+    lbl.textContent = '🔀 Scrambled cube — press →';
+    badge.textContent = '';
+  } else if (currentSlide === TOTAL-1) {
+    lbl.className = 'done';
+    lbl.innerHTML = '🎉 <strong>Fully solved!</strong>';
+    badge.textContent = '✓';
+    badge.style.color = '#3fb950';
+  } else {
+    lbl.className = 'solving';
+    lbl.textContent = `Step ${currentSlide} / ${TOTAL-2} solved`;
+    badge.textContent = SOLVE[currentSlide-1];
+    badge.style.color = '#58a6ff';
+  }
+}
+
+document.addEventListener('keydown', e => {
+  if (['ArrowRight','ArrowDown',' '].includes(e.key)) { e.preventDefault(); go(+1); }
+  if (['ArrowLeft','ArrowUp'].includes(e.key))         { e.preventDefault(); go(-1); }
+});
+
+renderSlide();
+</script>
+</body>
+</html>
