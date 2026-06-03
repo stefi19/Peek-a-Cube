@@ -3036,11 +3036,9 @@ void splitHSVChannels(Mat_<Vec3b> hsv, Mat_<uchar>& H, Mat_<uchar>& S, Mat_<ucha
 struct ComponentInfo {
     int label = 0;
     int area = 0;
-    int perimeter = 0;
     Point2f center = Point2f(0, 0);
     Rect bbox;
     float aspect = 0.0f;
-    float thinness = 0.0f;
     float bboxDensity = 0.0f;
     int meanH = 0;
     int meanS = 0;
@@ -3189,7 +3187,6 @@ string classifyRubikColor(int H, int S, int V, int R, int G, int B)
     if (isYellowRubikPixel(H, S, V, R, G, B)) {
         return "YELLOW";
     }
-    // orange before red
     if (isOrangeRubikPixel(H, S, V, R, G, B)) {
         return "ORANGE";
     }
@@ -3207,7 +3204,6 @@ string classifyRubikColor(int H, int S, int V, int R, int G, int B)
 
 bool isColoredRubikPixel(int H, int S, int V, int R, int G, int B)
 {
-    // remove skin before color decisions
     if (isSkinPixel(H, S, V, R, G, B)) {
         return false;
     }
@@ -3235,7 +3231,6 @@ Mat_<uchar> buildColoredRubikMask(Mat_<Vec3b> img, Mat_<uchar>& H, Mat_<uchar>& 
     splitHSVChannels(hsv, H, S, V);
     Mat_<uchar> mask(img.rows, img.cols);
     mask.setTo(255);
-    int objectPixels = 0;
     for (int i = 0; i < img.rows; i++) {
         for (int j = 0; j < img.cols; j++) {
             int B = img(i, j)[0];
@@ -3243,26 +3238,6 @@ Mat_<uchar> buildColoredRubikMask(Mat_<Vec3b> img, Mat_<uchar>& H, Mat_<uchar>& 
             int R = img(i, j)[2];
             if (isColoredRubikPixel(H(i, j), S(i, j), V(i, j), R, G, B)) {
                 mask(i, j) = 0;
-                objectPixels++;
-            }
-        }
-    }
-    return mask;
-}
-
-Mat_<uchar> buildWhiteRubikMask(Mat_<Vec3b> img, Mat_<uchar> H, Mat_<uchar> S, Mat_<uchar> V)
-{
-    Mat_<uchar> mask(img.rows, img.cols);
-    mask.setTo(255);
-    int objectPixels = 0;
-    for (int i = 0; i < img.rows; i++) {
-        for (int j = 0; j < img.cols; j++) {
-            int B = img(i, j)[0];
-            int G = img(i, j)[1];
-            int R = img(i, j)[2];
-            if (isWhiteRubikPixel(H(i, j), S(i, j), V(i, j), R, G, B)) {
-                mask(i, j) = 0;
-                objectPixels++;
             }
         }
     }
@@ -3321,27 +3296,6 @@ vector<ComponentInfo> extractComponentsFromLabels(Mat_<int> labels, Mat_<uchar> 
             }
         }
     }
-    vector<int> perim(maxLabel + 1, 0);
-    int di[4] = { -1, 0, 1, 0 };
-    int dj[4] = { 0, -1, 0, 1 };
-    for (int i = 0; i < labels.rows; i++) {
-        for (int j = 0; j < labels.cols; j++) {
-            int label = labels(i, j);
-            if (label > 0) {
-                bool border = false;
-                for (int k = 0; k < 4; k++) {
-                    int ni = i + di[k];
-                    int nj = j + dj[k];
-                    if (!isInside(labels, ni, nj) || labels(ni, nj) != label) {
-                        border = true;
-                    }
-                }
-                if (border) {
-                    perim[label]++;
-                }
-            }
-        }
-    }
     vector<ComponentInfo> components;
     for (int label = 1; label <= maxLabel; label++) {
         if (area[label] == 0) {
@@ -3350,7 +3304,6 @@ vector<ComponentInfo> extractComponentsFromLabels(Mat_<int> labels, Mat_<uchar> 
         ComponentInfo c;
         c.label = label;
         c.area = area[label];
-        c.perimeter = perim[label];
         c.center = Point2f(
             (float)sumX[label] / area[label],
             (float)sumY[label] / area[label]
@@ -3362,9 +3315,6 @@ vector<ComponentInfo> extractComponentsFromLabels(Mat_<int> labels, Mat_<uchar> 
         int bboxArea = width * height;
         if (bboxArea > 0) {
             c.bboxDensity = (float)c.area / bboxArea;
-        }
-        if (c.perimeter > 0) {
-            c.thinness = 4.0f * CV_PI * c.area / (c.perimeter * c.perimeter);
         }
         c.meanH = (int)(sumH[label] / area[label]);
         c.meanS = (int)(sumS[label] / area[label]);
@@ -3378,49 +3328,34 @@ vector<ComponentInfo> extractComponentsFromLabels(Mat_<int> labels, Mat_<uchar> 
     return components;
 }
 
-bool isPossibleCubeFace(ComponentInfo c, Size imgSize, bool whiteMode)
+bool isPossibleCubeFace(ComponentInfo c, Size imgSize)
 {
     int imageArea = imgSize.width * imgSize.height;
-    int minArea;
-    if (whiteMode) {
-        minArea = (int)(0.010f * imageArea);
-    }
-    else {
-        minArea = (int)(0.008f * imageArea);
-    }
+    int minArea = (int)(0.008f * imageArea);
     int maxArea = (int)(0.40f * imageArea);
+
     if (c.area < minArea) return false;
     if (c.area > maxArea) return false;
     if (c.bbox.width < imgSize.width * 0.12f) return false;
     if (c.bbox.height < imgSize.height * 0.12f) return false;
     if (c.aspect < 0.50f || c.aspect > 2.40f) return false;
     if (c.bboxDensity < 0.16f) return false;
-    if (whiteMode) {
-        if (c.colorName != "WHITE") return false;
-    }
-    else {
-        if (c.colorName == "WHITE" || c.colorName == "UNKNOWN") return false;
-    }
+    if (c.colorName == "WHITE" || c.colorName == "UNKNOWN") return false;
     return true;
 }
 
-ComponentInfo findBestComponentFace(vector<ComponentInfo> components, Size imgSize, bool whiteMode)
+ComponentInfo findBestComponentFace(vector<ComponentInfo> components, Size imgSize)
 {
     ComponentInfo best;
     float bestScore = -1.0f;
-    int centerX = imgSize.width / 2;
     for (ComponentInfo c : components) {
-        if (!isPossibleCubeFace(c, imgSize, whiteMode)) {
+        if (!isPossibleCubeFace(c, imgSize)) {
             continue;
         }
         float areaScore = (float)c.area / (imgSize.width * imgSize.height);
         float densityScore = c.bboxDensity;
         float aspectPenalty = fabs(1.25f - c.aspect);
-        float rightBonus = 0.0f;
-        // if (c.center.x > centerX) {
-        //     rightBonus = 0.10f;
-        // }
-        float score = 20.0f * areaScore + 2.0f * densityScore + rightBonus - 0.5f * aspectPenalty;
+        float score = 20.0f * areaScore + 2.0f * densityScore - 0.5f * aspectPenalty;
         if (score > bestScore) {
             bestScore = score;
             best = c;
@@ -3632,9 +3567,16 @@ ComponentInfo findWhiteFaceWithCanny(Mat_<Vec3b> img, Mat_<uchar> H, Mat_<uchar>
                 float avgS = averageValueInRect(S, box);
                 float avgV = averageValueInRect(V, box);
                 float whiteDensity = whiteDensityInRectForCanny(img, H, S, V, box);
-                if (avgS > 105.0f) continue;
-                if (avgV < 90.0f) continue;
-                if (whiteDensity < 0.15f) continue;
+                if (avgS > 105.0f) {
+                    continue;
+                }
+                if (avgV < 90.0f) {
+                    continue;
+                }
+                if (whiteDensity < 0.15f) {
+                    continue;
+                }
+
                 float gridScore = cannyGridScore(edges, box);
                 float borderScore = outerEdgeScore(edges, box);
                 if (gridScore < 0.012f && borderScore < 0.012f) {
@@ -3652,7 +3594,14 @@ ComponentInfo findWhiteFaceWithCanny(Mat_<Vec3b> img, Mat_<uchar> H, Mat_<uchar>
                 }
                 float lowSScore = max(0.0f, (105.0f - avgS) / 105.0f);
                 float sizeScore = (float)side / minDim;
-                float score = whiteDensity * 5000.0f + gridScore * 45000.0f + borderScore * 18000.0f + lowSScore * 3000.0f + sizeScore * 2500.0f + rightBonus * 1500.0f + yBonus * 1000.0f;
+                float score =
+                    whiteDensity * 5000.0f +
+                    gridScore * 45000.0f +
+                    borderScore * 18000.0f +
+                    lowSScore * 3000.0f +
+                    sizeScore * 2500.0f +
+                    rightBonus * 1500.0f +
+                    yBonus * 1000.0f;
                 if (score > bestScore) {
                     bestScore = score;
                     bestBox = box;
@@ -3677,25 +3626,529 @@ ComponentInfo findWhiteFaceWithCanny(Mat_<Vec3b> img, Mat_<uchar> H, Mat_<uchar>
     return bestFace;
 }
 
-Mat_<Vec3b> drawFaceAndSimpleGrid(Mat_<Vec3b> img, ComponentInfo face)
+struct StickerInfo {
+    Rect box;
+    RotatedRect rotatedBox;
+    Point2f center;
+    int row = -1;
+    int col = -1;
+    string color = "UNKNOWN";
+    float confidence = 0.0f;
+};
+
+struct RubikFace {
+    vector<Point2f> corners;
+    Rect bbox;
+    bool valid = false;
+};
+
+Vec3b colorNameToBGR(const string& colorName)
+{
+    if (colorName == "WHITE") {
+        return Vec3b(255, 255, 255);
+    }
+    if (colorName == "YELLOW") {
+        return Vec3b(0, 255, 255);
+    }
+    if (colorName == "RED") {
+        return Vec3b(0, 0, 255);
+    }
+    if (colorName == "ORANGE") {
+        return Vec3b(0, 165, 255);
+    }
+    if (colorName == "GREEN") {
+        return Vec3b(0, 128, 0);
+    }
+    if (colorName == "BLUE") {
+        return Vec3b(255, 0, 0);
+    }
+    return Vec3b(128, 128, 128);
+}
+
+int medianOfChannel(Mat_<uchar> channel)
+{
+    vector<int> hist(256, 0);
+    for (int i = 0; i < channel.rows; i++) {
+        for (int j = 0; j < channel.cols; j++) {
+            hist[channel(i, j)]++;
+        }
+    }
+    int half = channel.rows * channel.cols / 2;
+    int sum = 0;
+    for (int i = 0; i < 256; i++) {
+        sum += hist[i];
+        if (sum >= half) {
+            return i;
+        }
+    }
+    return 128;
+}
+
+Mat_<uchar> adaptiveCannyChannel(Mat_<uchar> channel)
+{
+    Mat_<uchar> blurred;
+    GaussianBlur(channel, blurred, Size(5, 5), 1.2);
+    int med = medianOfChannel(blurred);
+    int low = max(12, (int)(0.66f * med));
+    int high = min(245, max(low + 35, (int)(1.33f * med)));
+    Mat_<uchar> edges;
+    Canny(blurred, edges, low, high);
+    return edges;
+}
+
+void buildAdaptiveRubikEdges(Mat_<Vec3b> img, Mat_<uchar> S, Mat_<uchar> V, Mat_<uchar>& gray, Mat_<uchar>& edgeMap, Mat_<uchar>& closedMap)
+{
+    cvtColor(img, gray, COLOR_BGR2GRAY);
+    Mat_<uchar> edgesV = adaptiveCannyChannel(V);
+    Scalar meanS = mean(S);
+    if (meanS[0] < 75.0) {
+        edgeMap = edgesV.clone();
+    }
+    else {
+        Mat_<uchar> edgesS = adaptiveCannyChannel(S);
+        Mat_<uchar> edgesGray = adaptiveCannyChannel(gray);
+        Mat_<uchar> combined;
+        addWeighted(S, 0.45, V, 0.35, 0.0, combined);
+        addWeighted(combined, 1.0, gray, 0.20, 0.0, combined);
+        Mat_<uchar> edgesCombined = adaptiveCannyChannel(combined);
+        bitwise_or(edgesV, edgesS, edgeMap);
+        bitwise_or(edgeMap, edgesGray, edgeMap);
+        bitwise_or(edgeMap, edgesCombined, edgeMap);
+    }
+    Mat kernelDilate = getStructuringElement(MORPH_RECT, Size(3, 3));
+    Mat kernelClose = getStructuringElement(MORPH_RECT, Size(9, 9));
+    dilate(edgeMap, closedMap, kernelDilate, Point(-1, -1), 1);
+    morphologyEx(closedMap, closedMap, MORPH_CLOSE, kernelClose, Point(-1, -1), 2);
+}
+
+string classifyRubikHSVValue(int H, int S, int V)
+{
+    if (V < 50) {
+        return "UNKNOWN";
+    }
+    if (S <= 48 && V >= 140) {
+        return "WHITE";
+    }
+    if (S < 45 || V < 55) {
+        return "UNKNOWN";
+    }
+    if (H <= 10 || H >= 244) {
+        return "RED";
+    }
+    if (H >= 11 && H <= 32) {
+        return "ORANGE";
+    }
+    if (H >= 33 && H <= 62) {
+        return "YELLOW";
+    }
+    if (H >= 59 && H <= 150) {
+        return "GREEN";
+    }
+    if (H >= 151 && H <= 235) {
+        return "BLUE";
+    }
+    return "UNKNOWN";
+}
+
+string classifyStickerPixel(Vec3b bgr, Vec3b hsv)
+{
+    int B = bgr[0];
+    int G = bgr[1];
+    int R = bgr[2];
+    int H = hsv[0];
+    int S = hsv[1];
+    int V = hsv[2];
+    if (V < 55) {
+        return "UNKNOWN";
+    }
+    if (V > 242 && S < 35) {
+        return "UNKNOWN";
+    }
+    if (S <= 48 && V >= 142) {
+        int maxRGB = max(R, max(G, B));
+        int minRGB = min(R, min(G, B));
+        if (maxRGB - minRGB <= 58) {
+            return "WHITE";
+        }
+        return "UNKNOWN";
+    }
+    if (S < 48) {
+        return "UNKNOWN";
+    }
+    if ((H <= 10 || H >= 244) && R > G + 22 && R > B + 20) {
+        return "RED";
+    }
+    if (H >= 11 && H <= 32 && R > G + 5 && G > B + 8) {
+        float gRatio = R > 0 ? (float)G / (float)R : 0.0f;
+        if (gRatio >= 0.32f && gRatio <= 0.86f) {
+            return "ORANGE";
+        }
+    }
+    if (H >= 33 && H <= 62 && R > B + 25 && G > B + 25) {
+        return "YELLOW";
+    }
+    if (H >= 63 && H <= 150 && G > R + 5 && G > B - 3) {
+        return "GREEN";
+    }
+    if (H >= 151 && H <= 235 && B > R + 8 && B >= G - 12) {
+        return "BLUE";
+    }
+    return classifyRubikHSVValue(H, S, V);
+}
+
+string classifyStickerCentralRegion(Mat_<Vec3b> warpedFace, Mat_<Vec3b> warpedHSV, Mat_<uchar> warpedEdges, Rect cellBox, float& confidence)
+{
+    Rect sample(
+        cellBox.x + (int)(cellBox.width * 0.27f),
+        cellBox.y + (int)(cellBox.height * 0.27f),
+        max(1, (int)(cellBox.width * 0.46f)),
+        max(1, (int)(cellBox.height * 0.46f))
+    );
+    sample = sample & Rect(0, 0, warpedHSV.cols, warpedHSV.rows);
+    vector<int> votes(6, 0);
+    vector<int> hs, ss, vs;
+    int usable = 0;
+    int whitePixels = 0;
+    for (int y = sample.y; y < sample.y + sample.height; y++) {
+        for (int x = sample.x; x < sample.x + sample.width; x++) {
+            if (warpedEdges(y, x) != 0) {
+                continue;
+            }
+            Vec3b hsv = warpedHSV(y, x);
+            Vec3b bgr = warpedFace(y, x);
+            int h = hsv[0], s = hsv[1], v = hsv[2];
+            if (v < 55 || (v > 242 && s < 35)) {
+                continue;
+            }
+            hs.push_back(h);
+            ss.push_back(s);
+            vs.push_back(v);
+            string color = classifyStickerPixel(bgr, hsv);
+            if (color == "WHITE") {
+                votes[0]++;
+                whitePixels++;
+            }
+            else if (color == "YELLOW") votes[1]++;
+            else if (color == "RED") votes[2]++;
+            else if (color == "ORANGE") votes[3]++;
+            else if (color == "GREEN") votes[4]++;
+            else if (color == "BLUE") votes[5]++;
+            usable++;
+        }
+    }
+    if (usable == 0) {
+        confidence = 0.0f;
+        return "UNKNOWN";
+    }
+    sort(hs.begin(), hs.end());
+    sort(ss.begin(), ss.end());
+    sort(vs.begin(), vs.end());
+    int medianH = hs[hs.size() / 2];
+    int medianS = ss[ss.size() / 2];
+    int medianV = vs[vs.size() / 2];
+    float whiteRatio = (float)whitePixels / (float)usable;
+    if (whiteRatio >= 0.58f && medianS <= 58 && medianV >= 135) {
+        confidence = whiteRatio;
+        return "WHITE";
+    }
+    int bestIndex = 0;
+    for (int i = 1; i < 6; i++) {
+        if (votes[i] > votes[bestIndex]) {
+            bestIndex = i;
+        }
+    }
+    confidence = (float)votes[bestIndex] / (float)usable;
+    const string names[6] = {"WHITE", "YELLOW", "RED", "ORANGE", "GREEN", "BLUE"};
+    if (bestIndex == 0 && confidence < 0.58f) {
+        votes[0] = 0;
+        bestIndex = 1;
+        for (int i = 2; i < 6; i++) {
+            if (votes[i] > votes[bestIndex]) {
+                bestIndex = i;
+            }
+        }
+        confidence = (float)votes[bestIndex] / (float)usable;
+    }
+    if (votes[bestIndex] > 0 && confidence >= 0.34f) {
+        return names[bestIndex];
+    }
+    confidence = max(confidence, 0.25f);
+    return classifyRubikHSVValue(medianH, medianS, medianV);
+}
+
+Mat_<uchar> buildWarpedStickerRegionMask(Mat_<Vec3b> warpedHSV)
+{
+    Mat_<uchar> mask(warpedHSV.rows, warpedHSV.cols);
+    mask.setTo(0);
+    for (int y = 0; y < warpedHSV.rows; y++) {
+        for (int x = 0; x < warpedHSV.cols; x++) {
+            Vec3b hsv = warpedHSV(y, x);
+            int s = hsv[1];
+            int v = hsv[2];
+            bool whiteSticker = s <= 78 && v >= 120;
+            bool coloredSticker = s >= 36 && v >= 55;
+            if (whiteSticker || coloredSticker) {
+                mask(y, x) = 255;
+            }
+        }
+    }
+    Mat kernelOpen = getStructuringElement(MORPH_ELLIPSE, Size(5, 5));
+    Mat kernelClose = getStructuringElement(MORPH_RECT, Size(9, 9));
+    morphologyEx(mask, mask, MORPH_OPEN, kernelOpen, Point(-1, -1), 1);
+    morphologyEx(mask, mask, MORPH_CLOSE, kernelClose, Point(-1, -1), 1);
+    return mask;
+}
+
+vector<StickerInfo> detectWarpedStickerContours(Mat_<uchar> stickerMask)
+{
+    vector<StickerInfo> candidates;
+    vector<vector<Point>> contours;
+    findContours(stickerMask.clone(), contours, RETR_LIST, CHAIN_APPROX_SIMPLE);
+    const float cellArea = 100.0f * 100.0f;
+    for (const vector<Point>& contour : contours) {
+        double area = contourArea(contour);
+        if (area < cellArea * 0.12 || area > cellArea * 1.25) {
+            continue;
+        }
+        RotatedRect rr = minAreaRect(contour);
+        if (rr.size.width < 22 || rr.size.height < 22) {
+            continue;
+        }
+        float aspect = max(rr.size.width, rr.size.height) / max(1.0f, min(rr.size.width, rr.size.height));
+        if (aspect > 1.65f) {
+            continue;
+        }
+        float rectangularity = (float)area / max(1.0f, rr.size.width * rr.size.height);
+        if (rectangularity < 0.28f) {
+            continue;
+        }
+        Point2f c = rr.center;
+        int col = min(2, max(0, (int)(c.x / 100.0f)));
+        int row = min(2, max(0, (int)(c.y / 100.0f)));
+        Point2f expected(50.0f + col * 100.0f, 50.0f + row * 100.0f);
+        float dist = (float)norm(c - expected);
+        if (dist > 44.0f) {
+            continue;
+        }
+        StickerInfo sticker;
+        sticker.rotatedBox = rr;
+        sticker.box = boundingRect(contour);
+        sticker.center = c;
+        sticker.row = row;
+        sticker.col = col;
+        sticker.confidence = max(0.0f, 1.0f - dist / 70.0f);
+        candidates.push_back(sticker);
+    }
+    return candidates;
+}
+
+Mat_<uchar> buildStickerContourMap(Mat_<Vec3b> warpedHSV, Mat_<uchar> warpedEdges, Mat_<uchar> warpedClosed)
+{
+    Mat_<uchar> stickerMask = buildWarpedStickerRegionMask(warpedHSV);
+    Mat_<uchar> contourMap;
+    bitwise_or(stickerMask, warpedClosed, contourMap);
+    Mat kernel = getStructuringElement(MORPH_RECT, Size(5, 5));
+    morphologyEx(contourMap, contourMap, MORPH_CLOSE, kernel, Point(-1, -1), 1);
+    bitwise_or(contourMap, warpedEdges, contourMap);
+    return contourMap;
+}
+
+Mat_<Vec3b> drawWarpedStickerCandidates(Mat_<Vec3b> warpedFace, const vector<StickerInfo>& candidates)
+{
+    Mat_<Vec3b> debug = warpedFace.clone();
+    for (const StickerInfo& sticker : candidates) {
+        Point2f pts[4];
+        sticker.rotatedBox.points(pts);
+        for (int i = 0; i < 4; i++) {
+            line(debug, pts[i], pts[(i + 1) % 4], Scalar(0, 255, 0), 2);
+        }
+        circle(debug, sticker.center, 2, Scalar(0, 0, 255), FILLED);
+    }
+    return debug;
+}
+
+StickerInfo mapStickerToOriginal(const StickerInfo& warpedSticker, Mat inversePerspective)
+{
+    Point2f srcPts[4];
+    if (warpedSticker.rotatedBox.size.width > 1 && warpedSticker.rotatedBox.size.height > 1) {
+        warpedSticker.rotatedBox.points(srcPts);
+    }
+    else {
+        srcPts[0] = Point2f((float)warpedSticker.box.x, (float)warpedSticker.box.y);
+        srcPts[1] = Point2f((float)(warpedSticker.box.x + warpedSticker.box.width), (float)warpedSticker.box.y);
+        srcPts[2] = Point2f(
+            (float)(warpedSticker.box.x + warpedSticker.box.width),
+            (float)(warpedSticker.box.y + warpedSticker.box.height)
+        );
+        srcPts[3] = Point2f((float)warpedSticker.box.x, (float)(warpedSticker.box.y + warpedSticker.box.height));
+    }
+    vector<Point2f> src(srcPts, srcPts + 4), dst;
+    perspectiveTransform(src, dst, inversePerspective);
+    StickerInfo mapped = warpedSticker;
+    mapped.center = Point2f(0, 0);
+    for (const Point2f& p : dst) {
+        mapped.center += p;
+    }
+    mapped.center *= 0.25f;
+    mapped.rotatedBox = minAreaRect(dst);
+    vector<Point> intPts;
+    for (const Point2f& p : dst) {
+        intPts.push_back(Point(cvRound(p.x), cvRound(p.y)));
+    }
+    mapped.box = boundingRect(intPts);
+    return mapped;
+}
+
+vector<StickerInfo> extractRubikStickers(Mat_<Vec3b> img, Mat_<uchar> H, Mat_<uchar> S, Mat_<uchar> V,const RubikFace& face, Mat_<Vec3b>& warpedFace,Mat_<uchar>& warpedEdges, Mat_<uchar>& warpedClosed,Mat_<Vec3b>& warpedStickerCandidates)
+{
+    vector<StickerInfo> finalStickers;
+    if (!face.valid) {
+        return finalStickers;
+    }
+    vector<Point2f> dstQuad;
+    dstQuad.push_back(Point2f(0, 0));
+    dstQuad.push_back(Point2f(299, 0));
+    dstQuad.push_back(Point2f(299, 299));
+    dstQuad.push_back(Point2f(0, 299));
+    Mat perspective = getPerspectiveTransform(face.corners, dstQuad);
+    Mat inversePerspective = getPerspectiveTransform(dstQuad, face.corners);
+    warpPerspective(img, warpedFace, perspective, Size(300, 300), INTER_LINEAR, BORDER_REPLICATE);
+    Mat_<Vec3b> warpedHSV = convertRGBtoHSV(warpedFace);
+    Mat_<uchar> wh, ws, wv;
+    splitHSVChannels(warpedHSV, wh, ws, wv);
+    Mat_<uchar> warpedGray;
+    buildAdaptiveRubikEdges(warpedFace, ws, wv, warpedGray, warpedEdges, warpedClosed);
+    Mat_<uchar> stickerContourMap = buildStickerContourMap(warpedHSV, warpedEdges, warpedClosed);
+    vector<StickerInfo> contourStickers = detectWarpedStickerContours(stickerContourMap);
+    warpedStickerCandidates = drawWarpedStickerCandidates(warpedFace, contourStickers);
+    StickerInfo bestByCell[3][3];
+    bool hasContourCell[3][3] = {};
+    for (StickerInfo sticker : contourStickers) {
+        if (sticker.row < 0 || sticker.row >= 3 || sticker.col < 0 || sticker.col >= 3) {
+            continue;
+        }
+        if (!hasContourCell[sticker.row][sticker.col] ||
+            sticker.confidence > bestByCell[sticker.row][sticker.col].confidence) {
+            bestByCell[sticker.row][sticker.col] = sticker;
+            hasContourCell[sticker.row][sticker.col] = true;
+        }
+    }
+    int contourCells = 0;
+    for (int row = 0; row < 3; row++) {
+        for (int col = 0; col < 3; col++) {
+            if (hasContourCell[row][col]) {
+                contourCells++;
+            }
+        }
+    }
+    for (int row = 0; row < 3; row++) {
+        for (int col = 0; col < 3; col++) {
+            StickerInfo warpedSticker;
+            if (contourCells >= 9 && hasContourCell[row][col]) {
+                warpedSticker = bestByCell[row][col];
+            }
+            else {
+                warpedSticker.row = row;
+                warpedSticker.col = col;
+                warpedSticker.box = Rect(col * 100, row * 100, 100, 100);
+                warpedSticker.center = Point2f(50.0f + col * 100.0f, 50.0f + row * 100.0f);
+                warpedSticker.rotatedBox = RotatedRect(warpedSticker.center, Size2f(98, 98), 0.0f);
+                warpedSticker.confidence = 0.35f;
+            }
+            Rect cellBox(col * 100, row * 100, 100, 100);
+            float colorConfidence = 0.0f;
+            warpedSticker.color = classifyStickerCentralRegion(warpedFace, warpedHSV, warpedEdges, cellBox, colorConfidence);
+            warpedSticker.confidence = max(warpedSticker.confidence, colorConfidence);
+            finalStickers.push_back(mapStickerToOriginal(warpedSticker, inversePerspective));
+        }
+    }
+    return finalStickers;
+}
+
+void applyFaceColorConsistency(vector<StickerInfo>& stickers)
+{
+    vector<string> colors = {"WHITE", "YELLOW", "RED", "ORANGE", "GREEN", "BLUE"};
+    vector<int> counts(colors.size(), 0);
+    for (const StickerInfo& sticker : stickers) {
+        for (size_t i = 0; i < colors.size(); i++) {
+            if (sticker.color == colors[i]) {
+                counts[i]++;
+            }
+        }
+    }
+    int best = 0;
+    for (int i = 1; i < (int)counts.size(); i++) {
+        if (counts[i] > counts[best]) {
+            best = i;
+        }
+    }
+    if (counts[best] < 7) {
+        return;
+    }
+    string dominant = colors[best];
+    for (StickerInfo& sticker : stickers) {
+        if (dominant != "WHITE" && sticker.color == "WHITE" && sticker.confidence < 0.75f) {
+            sticker.color = dominant;
+            sticker.confidence = min(0.70f, sticker.confidence + 0.15f);
+        }
+        if (dominant == "RED" && sticker.color == "ORANGE" && sticker.confidence < 0.55f) {
+            sticker.color = dominant;
+        }
+        if (dominant == "ORANGE" && sticker.color == "RED" && sticker.confidence < 0.55f) {
+            sticker.color = dominant;
+        }
+    }
+}
+
+Mat_<Vec3b> drawFaceAndStickerGrid(Mat_<Vec3b> img, const RubikFace& face, const vector<StickerInfo>& stickers, bool printMatrix)
 {
     Mat_<Vec3b> result = img.clone();
-    if (face.area == 0) {
-        putText(result,"No face candidate found",Point(20, 30),FONT_HERSHEY_SIMPLEX,0.8,Scalar(0, 0, 255),2);
-        return result;
+    if (face.valid && face.corners.size() == 4) {
+        vector<Point> facePts;
+        for (const Point2f& p : face.corners) {
+            facePts.push_back(Point(cvRound(p.x), cvRound(p.y)));
+        }
+        polylines(result, facePts, true, Scalar(0, 0, 255), 3);
     }
-    Rect box = face.bbox;
-    int margin = max(4, min(box.width, box.height) / 25);
-    box = expandRectSafe(box, margin, img.size());
-    rectangle(result, box, Vec3b(0, 0, 255), 3);
-    for (int k = 1; k <= 2; k++) {
-        int x = box.x + k * box.width / 3;
-        int y = box.y + k * box.height / 3;
-        line(result, Point(x, box.y), Point(x, box.y + box.height), Scalar(255, 0, 0), 2);
-        line(result, Point(box.x, y), Point(box.x + box.width, y), Scalar(255, 0, 0), 2);
+    string matrix[3][3];
+    for (int r = 0; r < 3; r++) {
+        for (int c = 0; c < 3; c++) {
+            matrix[r][c] = "UNKNOWN";
+        }
     }
-    string text = "FACE " + face.colorName + " A=" + to_string(face.area);
-    putText(result, text,Point(box.x, max(0, box.y - 8)),FONT_HERSHEY_SIMPLEX,0.6,Scalar(0, 0, 255),2);
+    for (const StickerInfo& sticker : stickers) {
+        Vec3b bgr = colorNameToBGR(sticker.color);
+        Point2f pts[4];
+        sticker.rotatedBox.points(pts);
+        for (int i = 0; i < 4; i++) {
+            line(result, pts[i], pts[(i + 1) % 4], Scalar(bgr[0], bgr[1], bgr[2]), 2);
+        }
+        circle(result, sticker.center, 3, Scalar(255, 255, 255), FILLED);
+        string label = to_string(sticker.row) + "," + to_string(sticker.col) + " " + sticker.color;
+        putText(result, label, sticker.center + Point2f(-32, 4), FONT_HERSHEY_SIMPLEX, 0.38, Scalar(0, 0, 0), 3);
+        putText(result, label, sticker.center + Point2f(-32, 4), FONT_HERSHEY_SIMPLEX, 0.38, Scalar(255, 255, 255), 1);
+        if (sticker.row >= 0 && sticker.row < 3 && sticker.col >= 0 && sticker.col < 3) {
+            matrix[sticker.row][sticker.col] = sticker.color;
+        }
+    }
+    if (printMatrix) {
+        cout << "\nDetected Rubik stickers:" << endl;
+        for (const StickerInfo& sticker : stickers) {
+            cout << "  [" << sticker.row << "," << sticker.col << "] = " << sticker.color
+                 << " confidence=" << fixed << setprecision(2) << sticker.confidence << endl;
+        }
+        cout << "\nRubik 3x3 color matrix:" << endl;
+        for (int r = 0; r < 3; r++) {
+            cout << "  ";
+            for (int c = 0; c < 3; c++) {
+                cout << matrix[r][c];
+                if (c < 2) {
+                    cout << " | ";
+                }
+            }
+            cout << endl;
+        }
+    }
     return result;
 }
 
@@ -3705,7 +4158,16 @@ void printComponents(string title, vector<ComponentInfo> components)
     int limit = min((int)components.size(), 20);
     for (int i = 0; i < limit; i++) {
         ComponentInfo c = components[i];
-        cout << i + 1 << " label=" << c.label << " area=" << c.area << " center=(" << c.center.x << "," << c.center.y << ")" << " bbox=" << c.bbox.width << "x" << c.bbox.height << " aspect=" << c.aspect << " density=" << c.bboxDensity << " HSV=(" << c.meanH << "," << c.meanS << "," << c.meanV << ")" << " RGB=(" << c.meanR << "," << c.meanG << "," << c.meanB << ")" << " color=" << c.colorName << endl;
+        cout << i + 1
+             << " label=" << c.label
+             << " area=" << c.area
+             << " center=(" << c.center.x << "," << c.center.y << ")"
+             << " bbox=" << c.bbox.width << "x" << c.bbox.height
+             << " aspect=" << c.aspect
+             << " density=" << c.bboxDensity
+             << " HSV=(" << c.meanH << "," << c.meanS << "," << c.meanV << ")"
+             << " RGB=(" << c.meanR << "," << c.meanG << "," << c.meanB << ")"
+             << " color=" << c.colorName << endl;
     }
 }
 
@@ -3716,22 +4178,47 @@ void printFace(ComponentInfo face)
         cout << "No face found." << endl;
         return;
     }
-    cout << "label=" << face.label << " area=" << face.area << " center=(" << face.center.x << "," << face.center.y << ")" << " bbox=" << face.bbox.width << "x" << face.bbox.height << " aspect=" << face.aspect << " density=" << face.bboxDensity << " HSV=(" << face.meanH << "," << face.meanS << "," << face.meanV << ")" << " RGB=(" << face.meanR << "," << face.meanG << "," << face.meanB << ")" << " color=" << face.colorName << endl;
+    cout << "label=" << face.label
+         << " area=" << face.area
+         << " center=(" << face.center.x << "," << face.center.y << ")"
+         << " bbox=" << face.bbox.width << "x" << face.bbox.height
+         << " aspect=" << face.aspect
+         << " density=" << face.bboxDensity
+         << " HSV=(" << face.meanH << "," << face.meanS << "," << face.meanV << ")"
+         << " RGB=(" << face.meanR << "," << face.meanG << "," << face.meanB << ")"
+         << " color=" << face.colorName << endl;
 }
-Mat_<Vec3b> processRubikFrame(Mat_<Vec3b> inputImg, bool showDebugWindows, bool printInfo)
+
+RubikFace faceFromComponent(ComponentInfo component, Size imageSize)
 {
-    Mat_<Vec3b> img = resizeProjectImageIfNeeded(inputImg);
-    Mat_<uchar> H, S, V;
-    Mat_<uchar> coloredMask = buildColoredRubikMask(img, H, S, V);
+    RubikFace face;
+    if (component.area == 0) {
+        return face;
+    }
+    Rect box = component.bbox & Rect(0, 0, imageSize.width, imageSize.height);
+    if (box.width <= 0 || box.height <= 0) {
+        return face;
+    }
+    face.corners.push_back(Point2f((float)box.x, (float)box.y));
+    face.corners.push_back(Point2f((float)(box.x + box.width - 1), (float)box.y));
+    face.corners.push_back(Point2f((float)(box.x + box.width - 1), (float)(box.y + box.height - 1)));
+    face.corners.push_back(Point2f((float)box.x, (float)(box.y + box.height - 1)));
+    face.bbox = box;
+    face.valid = true;
+    return face;
+}
+ComponentInfo detectRubikFaceROI(Mat_<Vec3b> img, Mat_<uchar>& H, Mat_<uchar>& S, Mat_<uchar>& V,Mat_<uchar>& coloredMask, Mat_<uchar>& cleanColoredMask,Mat_<int>& coloredLabels, vector<ComponentInfo>& coloredComponents,bool showDebugWindows, bool& usedWhiteCanny)
+{
+    coloredMask = buildColoredRubikMask(img, H, S, V);
     Mat_<uchar> strel3 = squareStrel3();
     Mat_<uchar> strel5 = squareStrel5();
-    Mat_<uchar> cleanColoredMask = openingOp(coloredMask, strel3);
+    cleanColoredMask = openingOp(coloredMask, strel3);
     cleanColoredMask = closingOp(cleanColoredMask, strel5);
-    Mat_<int> coloredLabels(cleanColoredMask.rows, cleanColoredMask.cols, 0);
+    coloredLabels = Mat_<int>(cleanColoredMask.rows, cleanColoredMask.cols, 0);
     bfs_connected_components(cleanColoredMask, coloredLabels, true);
-    vector<ComponentInfo> coloredComponents = extractComponentsFromLabels(coloredLabels, H, S, V, img);
-    ComponentInfo face = findBestComponentFace(coloredComponents, img.size(), false);
-    bool usedWhiteCanny = false;
+    coloredComponents = extractComponentsFromLabels(coloredLabels, H, S, V, img);
+    ComponentInfo face = findBestComponentFace(coloredComponents, img.size());
+    usedWhiteCanny = false;
     if (face.area == 0) {
         face = findWhiteFaceWithCanny(img, H, S, V, showDebugWindows);
         usedWhiteCanny = true;
@@ -3739,7 +4226,36 @@ Mat_<Vec3b> processRubikFrame(Mat_<Vec3b> inputImg, bool showDebugWindows, bool 
     if (face.area > 0 && face.colorName != "WHITE") {
         face.colorName = dominantColorInsideBox(img, H, S, V, face.bbox);
     }
-    Mat_<Vec3b> result = drawFaceAndSimpleGrid(img, face);
+    return face;
+}
+
+Mat_<Vec3b> processRubikFrame(Mat_<Vec3b> inputImg, bool showDebugWindows, bool printInfo)
+{
+    Mat_<Vec3b> img = resizeProjectImageIfNeeded(inputImg);
+    if (img.empty()) {
+        return img;
+    }
+    Mat_<uchar> H, S, V;
+    Mat_<uchar> coloredMask;
+    Mat_<uchar> cleanColoredMask;
+    Mat_<int> coloredLabels;
+    vector<ComponentInfo> coloredComponents;
+    bool usedWhiteCanny = false;
+    ComponentInfo faceComponent = detectRubikFaceROI(
+        img, H, S, V, coloredMask, cleanColoredMask, coloredLabels, coloredComponents,
+        showDebugWindows, usedWhiteCanny
+    );
+    RubikFace face = faceFromComponent(faceComponent, img.size());
+    Mat_<Vec3b> warpedFace;
+    Mat_<uchar> warpedEdges;
+    Mat_<uchar> warpedClosed;
+    Mat_<Vec3b> warpedStickerCandidates;
+    vector<StickerInfo> finalStickers;
+    if (face.valid) {
+        finalStickers = extractRubikStickers(img, H, S, V, face, warpedFace, warpedEdges, warpedClosed, warpedStickerCandidates);
+        applyFaceColorConsistency(finalStickers);
+    }
+    Mat_<Vec3b> result = drawFaceAndStickerGrid(img, face, finalStickers, printInfo);
     if (showDebugWindows) {
         imshow("1 Original resized", img);
         imshow("2 H channel", H);
@@ -3750,15 +4266,30 @@ Mat_<Vec3b> processRubikFrame(Mat_<Vec3b> inputImg, bool showDebugWindows, bool 
             imshow("6 Clean colored mask", cleanColoredMask);
             displayLabels(coloredLabels, "7 Colored connected components");
         }
+        if (!warpedFace.empty()) {
+            imshow("8 ROI warped face", warpedFace);
+        }
+        if (!warpedEdges.empty()) {
+            imshow("9 ROI adaptive edges", warpedEdges);
+        }
+        if (!warpedClosed.empty()) {
+            imshow("10 ROI closed edges", warpedClosed);
+        }
+        if (!warpedStickerCandidates.empty()) {
+            imshow("11 ROI sticker candidates", warpedStickerCandidates);
+        }
+        imshow("12 Final Rubik grid", result);
     }
     if (printInfo) {
         if (!usedWhiteCanny) {
             printComponents("Colored components", coloredComponents);
         }
-        printFace(face);
+        printFace(faceComponent);
+        cout << "Stickers inside ROI: " << finalStickers.size() << endl;
     }
     return result;
 }
+
 bool tryOpenCamera(VideoCapture& cap)
 {
     vector<int> cameraIndexes = {0, 1, 2, 3};
@@ -3801,6 +4332,7 @@ bool readValidFrame(VideoCapture& cap, Mat& frame)
     }
     return false;
 }
+
 void project()
 {
     int op;
@@ -3822,7 +4354,6 @@ void project()
                     "Project/albastru.bmp",
                     "Project/alb.bmp"
                 };
-
                 for (const string& filename : filenames) {
                     cout << filename << endl;
                     Mat_<Vec3b> img = imread(filename);

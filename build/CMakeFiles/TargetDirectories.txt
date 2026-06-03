@@ -1,0 +1,3 @@
+/Users/stefi/CLionProjects/Lab1/Peek-a-Cube/build/CMakeFiles/Lab1.dir
+/Users/stefi/CLionProjects/Lab1/Peek-a-Cube/build/CMakeFiles/edit_cache.dir
+/Users/stefi/CLionProjects/Lab1/Peek-a-Cube/build/CMakeFiles/rebuild_cache.dir

@@ -1,1052 +1,1059 @@
 # Peek-a-Cube: Rubik's Cube Face Detection
 
-A comprehensive image processing project that automatically detects Rubik's cube faces from images and video streams using advanced color segmentation, morphological operations, and connected component analysis.
+Peek-a-Cube is an image processing project that detects the front face of a Rubik's cube, extracts the 9 visible stickers from that face, and prints the detected 3x3 color matrix.
+
+The project code is part of the same `main.cpp` file as the laboratory exercises. The Rubik project section starts at:
+
+```cpp
+// PROJECT
+```
+
+The main entry point for the Rubik detection pipeline is:
+
+```cpp
+Mat_<Vec3b> processRubikFrame(Mat_<Vec3b> inputImg, bool showDebugWindows, bool printInfo)
+```
+
+This function receives a BGR image, detects the Rubik face region first, and then searches for stickers only inside that detected region. The algorithm does not search for a 3x3 grid over the whole image, because doing so can accidentally include the hand, the background, or stickers from a side face of the cube.
 
 ---
 
-## 📋 Table of Contents
+## Table of Contents
 
-- [Project Overview](#project-overview)
-- [Features](#features)
-- [Directory Structure](#directory-structure)
+- [Project Goal](#project-goal)
+- [What the Application Does](#what-the-application-does)
+- [Project Structure](#project-structure)
 - [Dependencies](#dependencies)
-- [Build Instructions](#build-instructions)
-- [Running the Project](#running-the-project)
-- [Algorithm Pipeline](#algorithm-pipeline)
-- [Function Reference](#function-reference)
-- [Technical Details](#technical-details)
-- [Troubleshooting](#troubleshooting)
+- [Build and Run](#build-and-run)
+- [Application Menu](#application-menu)
+- [Main Algorithm Idea](#main-algorithm-idea)
+- [Complete Pipeline](#complete-pipeline)
+- [HSV and Color Explanation](#hsv-and-color-explanation)
+- [Rubik Face Detection](#rubik-face-detection)
+- [White Face Detection](#white-face-detection)
+- [Sticker Extraction Inside the ROI](#sticker-extraction-inside-the-roi)
+- [Adaptive Edge Detection Inside the ROI](#adaptive-edge-detection-inside-the-roi)
+- [Sticker Color Classification](#sticker-color-classification)
+- [Debug Windows](#debug-windows)
+- [Important Functions](#important-functions)
+- [Limitations](#limitations)
+- [How to Test](#how-to-test)
+- [Common Problems and Fixes](#common-problems-and-fixes)
+- [Code Style Notes](#code-style-notes)
+- [Summary](#summary)
 
 ---
 
-## 🎯 Project Overview
+## Project Goal
 
-**Peek-a-Cube** is an intelligent computer vision system designed to:
+The goal of the project is to automatically detect one visible face of a Rubik's cube from either a static image or a live camera frame.
 
-1. **Detect Rubik's cube faces** in images and live video streams
-2. **Segment cube stickers** by color using HSV color space analysis
-3. **Extract 3×3 color grids** from detected faces
-4. **Display results** with bounding boxes and grid overlays
+The expected output is:
 
-The system handles real-world challenges including:
-- Variable lighting conditions
-- Hand occlusion (the hand holding the cube)
-- Perspective distortion
-- Partial face visibility
-- Different camera angles and distances
+1. a tight outline around the detected front face;
+2. exactly 9 sticker cells drawn inside that detected face;
+3. a 3x3 color matrix printed in the console;
+4. debug windows that show the important processing steps.
 
-**Target Use Cases:**
-- Rubik's cube solving assistance apps
-- Computer vision education
-- Automated cube state recognition
-- Multi-angle face detection for reconstruction
+This is not just a problem of finding colored squares. Real images contain several complications:
 
----
+- the hand holding the cube can have colors close to red or orange;
+- a side face of the cube can also be visible;
+- lighting can change saturation and brightness;
+- the white face is hard to detect by color alone because it has low saturation;
+- black separators between stickers can break or merge components;
+- reflections or the logo on a white sticker can confuse classification.
 
-## ✨ Features
+Because of these issues, the algorithm follows one important rule:
 
-✅ **6 Color Detection**: Orange, Red, Yellow, Green, Blue, White
-✅ **Live Camera Support**: Real-time detection from webcam
-✅ **Batch Processing**: Test on 6 provided sample images
-✅ **Debug Visualization**: Step-by-step channel and mask outputs
-✅ **Morphological Cleaning**: Remove noise and connect separated stickers
-✅ **Robust Classification**: Multiple detection criteria per color
-✅ **Skin Exclusion**: Intelligent hand detection and removal
-✅ **Canny Edge Detection**: White face detection via grid structure
-✅ **Color Re-voting**: Majority voting for accurate color classification
+First detect the main cube face, then process only that face region.
+
+This is the most important design choice in the current implementation.
 
 ---
 
-## 📁 Directory Structure
+## What the Application Does
 
-```
-Lab1/Peek-a-Cube/
-├── main.cpp                    # Main source file (4300+ lines)
-├── CMakeLists.txt              # Build configuration
-├── README.md                   # This file
+The application can run in two modes:
+
+1. static image mode, using images from the `Project/` folder;
+2. live camera mode, using a webcam.
+
+For every image or frame, the application:
+
+1. resizes the image if it is too large;
+2. converts the image to HSV using the custom `convertRGBtoHSV` function;
+3. builds a mask for colored Rubik pixels;
+4. cleans the mask using morphological operations;
+5. detects connected components;
+6. chooses the most likely Rubik face region;
+7. if no colored face is found, tries a Canny-based fallback for the white face;
+8. warps the detected face region into a 300x300 image;
+9. searches for stickers only inside that warped ROI;
+10. reconstructs a 3x3 grid inside the ROI;
+11. classifies each sticker using the center of its cell;
+12. draws the result and prints the color matrix.
+
+---
+
+## Project Structure
+
+The relevant project structure is:
+
+```text
+Peek-a-Cube/
+├── main.cpp
+├── CMakeLists.txt
+├── README.md
 ├── Project/
-│   ├── portocaliu.bmp          # Test image (orange face)
-│   ├── rosu.bmp                # Test image (red face)
-│   ├── galben.bmp              # Test image (yellow face)
-│   ├── verde.bmp               # Test image (green face)
-│   ├── albastru.bmp            # Test image (blue face)
-│   ├── alb.bmp                 # Test image (white face)
-│   ├── original_resized.png    # Sample input image
-│   ├── H channel.png           # Hue channel visualization
-│   ├── S channel.png           # Saturation channel visualization
-│   ├── V channel.png           # Value (brightness) visualization
-│   ├── colored mask.png        # Raw color segmentation result
-│   ├── clean colored mask.png  # After morphological cleanup
-│   ├── connected components.png # BFS labeled components
-│   ├── final.png               # Final detection output
-│   └── prezentare.html         # Interactive HTML presentation
-└── build/                      # CMake build directory
-    ├── Peek-a-Cube            # Compiled executable
-    └── (generated files)
+│   ├── portocaliu.bmp
+│   ├── rosu.bmp
+│   ├── galben.bmp
+│   ├── verde.bmp
+│   ├── albastru.bmp
+│   ├── alb.bmp
+│   ├── original_resized.png
+│   ├── H channel.png
+│   ├── S channel.png
+│   ├── V channel.png
+│   ├── colored mask.png
+│   ├── clean colored mask.png
+│   ├── connected components.png
+│   ├── final.png
+│   └── prezentare.html
+└── build/
+    └── Lab1
+```
+
+Important files:
+
+- `main.cpp`: contains all laboratory functions and the Rubik project code;
+- `CMakeLists.txt`: configures the project build and links OpenCV;
+- `Project/*.bmp`: test images for the main cube face colors;
+- `Project/prezentare.html`: visual project presentation;
+- `README.md`: this documentation file.
+
+The CMake target is named:
+
+```text
+Lab1
+```
+
+So the executable is run with:
+
+```bash
+./build/Lab1
 ```
 
 ---
 
-## 🔧 Dependencies
+## Dependencies
 
-### Required Libraries:
-- **OpenCV** (3.4+) - Image processing
-  - Core: Mat, VideoCapture, morphological operations
-  - Image Processing: resize, Canny, GaussianBlur
-  - Drawing: rectangle, line, putText
+The project uses C++ and OpenCV.
 
-### Build Tools:
-- **CMake** (3.10+)
-- **C++11 or later**
-- **macOS or Linux** (Windows may require adjustments)
+Required:
 
-### Installation (macOS with Homebrew):
+- a C++ compiler with C++11 support;
+- CMake;
+- OpenCV;
+- a system that can display OpenCV windows through `imshow`;
+- a webcam, only for live mode.
+
+On macOS with Homebrew:
+
 ```bash
-brew install opencv cmake
+brew install cmake opencv
 ```
 
-### Installation (Ubuntu/Debian):
+On Ubuntu/Debian:
+
 ```bash
-sudo apt-get install libopencv-dev cmake
+sudo apt-get update
+sudo apt-get install cmake libopencv-dev
 ```
+
+In `CMakeLists.txt`, the macOS OpenCV path is currently set as:
+
+```cmake
+set(OpenCV_DIR "/opt/homebrew/opt/opencv/lib/cmake/opencv4")
+```
+
+If OpenCV is installed somewhere else, this path may need to be changed.
 
 ---
 
-## 🛠️ Build Instructions
+## Build and Run
 
-### Prerequisites:
-- CMake installed
-- OpenCV development libraries installed
-- C++ compiler (clang, g++, or MSVC)
+From the project root:
 
-### Build Steps:
 ```bash
-cd /Users/stefi/CLionProjects/Lab1/Peek-a-Cube
 mkdir -p build
 cd build
 cmake ..
-make
+cmake --build .
 ```
 
-### Expected Output:
+If the `build` directory already exists, this is enough:
+
+```bash
+cmake --build build
 ```
--- OpenCV version: 4.x.x
--- Configuring done
--- Generating done
--- Build files have been written to: .../build
-[100%] Built target Peek-a-Cube
+
+Run the executable:
+
+```bash
+./build/Lab1
+```
+
+If the build succeeds, the output should contain:
+
+```text
+[100%] Built target Lab1
 ```
 
 ---
 
-## 🚀 Running the Project
+## Application Menu
 
-### Run the Executable:
-```bash
-./build/Peek-a-Cube
-```
+At startup, the main laboratory menu appears:
 
-### Main Menu:
-```
+```text
 Menu:
- 1 - Lab1    (Histogram manipulation)
- 2 - Lab2    (Image operations)
- 3 - Lab3    (Filters)
+ 1 - Lab1
+ 2 - Lab2
+ 3 - Lab3
  ...
- 15 - Project (Rubik's Cube Detection)
+ 15 - Project
  0 - Exit
 
-Option: 15
+Option:
 ```
 
-### Project Sub-Menu:
+For the Rubik project, choose:
+
+```text
+15
 ```
+
+Then the project menu appears:
+
+```text
 PROJECT MENU:
 1 - Run on images from Project/ folder
 2 - Open camera and detect live
 0 - Exit project
-
-Option: 1  or 2
+Option:
 ```
 
----
+Option `1` runs the detector on the six test images:
 
-## 🔍 Algorithm Pipeline
-
-### Step-by-Step Processing Flow:
-
-```
-┌─────────────────┐
-│   Input Image   │  (640×480 or larger)
-└────────┬────────┘
-         │
-         v
-┌──────────────────┐
-│   Resize if      │  (Max 900px, INTER_AREA)
-│   larger than    │
-│   900px          │
-└────────┬─────────┘
-         │
-         v
-┌──────────────────┐
-│ Convert BGR→HSV  │  (Manual RGB→HSV conversion)
-│ Split H,S,V      │  (Separate into 3 channels)
-└────────┬─────────┘
-         │
-         v
-┌──────────────────┐
-│ Build Colored    │  (Pixel-by-pixel classification)
-│ Mask             │  (Check 6 color functions)
-└────────┬─────────┘
-         │
-         v
-┌──────────────────┐
-│ Opening Op       │  (3×3: Erode → Dilate)
-│ Closing Op       │  (5×5: Dilate → Erode)
-└────────┬─────────┘
-         │
-         v
-┌──────────────────┐
-│ BFS Connected    │  (Label blobs 1..N)
-│ Components       │  (8-connectivity)
-└────────┬─────────┘
-         │
-         v
-┌──────────────────┐
-│ Extract Features │  (Area, center, bbox, HSV mean)
-│ per Blob         │  (Aspect, density, thinness)
-└────────┬─────────┘
-         │
-         v
-┌──────────────────┐
-│ Filter & Score   │  (isPossibleCubeFace)
-│ Candidates       │  (findBestComponentFace)
-└────────┬─────────┘
-         │
-    ┌────┴─────────┐
-    │              │
-    v              v
-(Found) ┌──────┐ (Not Found)
-    │   OR   │  │
-    └─┬──────┘  │
-      │         v
-      │    ┌───────────────┐
-      │    │ Fallback:     │
-      │    │ Canny Edge    │
-      │    │ Detection     │
-      │    │ (White Faces) │
-      │    └───────┬───────┘
-      │            │
-      └─────┬──────┘
-            │
-            v
-┌──────────────────┐
-│ Re-vote Color    │  (dominantColorInsideBox)
-│ by Majority      │  (Exclude 1/8 margins)
-└────────┬─────────┘
-         │
-         v
-┌──────────────────┐
-│ Draw & Output    │  (Green bbox + 3×3 grid)
-│ Result           │  (Color label + area)
-└──────────────────┘
+```text
+Project/portocaliu.bmp
+Project/rosu.bmp
+Project/galben.bmp
+Project/verde.bmp
+Project/albastru.bmp
+Project/alb.bmp
 ```
 
----
+Option `2` opens the camera and processes live frames.
 
-## 📚 Function Reference
-
-### Color Detection Functions
-
-#### `bool isSkinPixel(int H, int S, int V, int R, int G, int B)`
-**Purpose:** Detect human skin pixels to exclude hands from cube detection.
-
-**Parameters:**
-- H: Hue channel value (0-255, where 0°–35° = skin hues)
-- S: Saturation channel (15–135 for skin)
-- V: Value/brightness (≥45)
-- R, G, B: Raw RGB values
-
-**Returns:** True if pixel matches skin color profile.
-
-**Logic:**
-- H range: 0–35 (red-orange skin tones)
-- RGB constraints: R>G, G≥B-5, R>B+15 (skin characteristic ratios)
-- G/R ratio: 0.48–0.95 (skin green-to-red ratio)
-- B/R ratio: 0.25–0.85 (skin blue-to-red ratio)
-- Saturation: 15–135 (skin is less saturated than stickers)
-
-**Critical:** Called FIRST in color classification to exclude hand before checking cube colors.
+The menu behavior is intentionally unchanged. The project remains integrated into option `15`.
 
 ---
 
-#### `bool isWhiteRubikPixel(int H, int S, int V, int R, int G, int B)`
-**Purpose:** Detect white cube stickers (low saturation, high brightness).
+## Main Algorithm Idea
 
-**Parameters:** Same as above
+The central idea is:
 
-**Returns:** True if white sticker.
+Do not search for the 3x3 sticker grid in the whole image.
 
-**Logic:**
-- Brightness: V≥105, maxRGB≥115, R/G/B all≥85 (bright & balanced)
-- Saturation: S≤85 (white is desaturated)
-- RGB balance: max–min≤75 (no dominant color)
-- Not skin: Must pass skin exclusion
+The algorithm first detects the main Rubik face. Only after the face is found does it crop and warp that face into a square ROI. Sticker detection and sticker classification are then performed only inside that ROI.
 
-**Note:** White is checked FIRST in `classifyRubikColor` because it's most specific.
+This matters because an input image can contain:
 
----
+- stickers from a side face;
+- hand pixels;
+- colored background pixels;
+- reflections;
+- black cube edges;
+- square objects in the background.
 
-#### `bool isYellowRubikPixel(int H, int S, int V, int R, int G, int B)`
-**Purpose:** Detect yellow stickers.
+If the 3x3 grid were searched globally, the algorithm could mix elements from different image regions. For example, it could take 6 stickers from the front face and 3 stickers from a side face. It could also mistake part of the hand or background for a sticker.
 
-**Parameters:** Same as above
-
-**Returns:** True if yellow.
-
-**Logic:**
-- Hue: H ∈ [28, 82] (40°–117° in degrees)
-- RGB: R≥95, G≥90, B≤170, R>B+30, G>B+30 (yellow has high R and G, low B)
-- Ratios: G/R ∈ [0.70, 1.20], B/R ≤0.70 (for yellow, G≈R)
-- Saturation: S≥45, V≥70 (vibrant and bright)
-
-**Key Insight:** Checked before Orange to prevent orange from stealing yellow pixels (both have G/R > 0.43).
+The current pipeline avoids that by making the face ROI the boundary for all later sticker work.
 
 ---
 
-#### `bool isOrangeRubikPixel(int H, int S, int V, int R, int G, int B)`
-**Purpose:** Detect orange stickers.
-
-**Parameters:** Same as above
-
-**Returns:** True if orange.
-
-**Logic:**
-- Hue: H ∈ [7, 45] (~7°–63°)
-- RGB: R≥90, G≥40, R>G+5, R>B+22, G>B+5 (orange: R>G>B)
-- Ratios: G/R ∈ [0.43, 0.93], B/R ≤0.78 (orange ratio distinct from red)
-- Saturation: S≥55, V≥45
-
-**Distinction from Yellow:** G/R < 1.0 (green ratio < red)
-**Distinction from Red:** G/R > 0.43 (more green than red)
-
----
-
-#### `bool isRedRubikPixel(int H, int S, int V, int R, int G, int B)`
-**Purpose:** Detect red stickers.
-
-**Parameters:** Same as above
-
-**Returns:** True if red.
-
-**Logic:**
-- Hue: H ≤14 OR H ≥240 (red is at 0° wrap-around on color wheel)
-- RGB: R≥85, R>G+25, R>B+25 (red dominant)
-- Ratios: G/R ≤0.62, B/R ≤0.85 (red has minimal green and blue)
-- Saturation: S≥55, V≥45
-
-**Distinction:** Most restrictive G/R ratio (≤0.62) among warm colors.
-
----
-
-#### `bool isGreenRubikPixel(int H, int S, int V, int R, int G, int B)`
-**Purpose:** Detect green stickers.
-
-**Parameters:** Same as above
-
-**Returns:** True if green.
-
-**Logic:**
-- Hue: H ∈ [65, 155] (90°–217°)
-- RGB: G≥55, G>R+8, G>B+3 (green dominant)
-- Saturation: S≥45, V≥45
-
-**Note:** Simplest check (no ratio constraints) because green is far from other colors.
-
----
-
-#### `bool isBlueRubikPixel(int H, int S, int V, int R, int G, int B)`
-**Purpose:** Detect blue stickers.
-
-**Parameters:** Same as above
-
-**Returns:** True if blue.
-
-**Logic:**
-- Hue: H ∈ [110, 235] (154°–330°)
-- RGB: B≥50, B>R+8, B≥G-10 (blue dominant)
-- Saturation: S≥40, V≥35
-
----
-
-#### `string classifyRubikColor(int H, int S, int V, int R, int G, int B)`
-**Purpose:** Classify a single pixel into one of 7 color categories.
-
-**Returns:** "WHITE", "YELLOW", "ORANGE", "RED", "GREEN", "BLUE", or "UNKNOWN"
-
-**Order of Checks (CRITICAL):**
-1. White (most specific, low saturation)
-2. Yellow (checked before Orange to avoid false positives)
-3. Orange (before Red to distinguish by G/R ratio)
-4. Red
-5. Green
-6. Blue
-7. UNKNOWN (if no match)
-
-**Why Order Matters:**
-- If Orange checked before Yellow, high-saturation yellow pixels (G/R>0.43) would be misclassified as orange
-- If Red checked before Orange, orange would be absorbed into red
-
----
-
-#### `bool isColoredRubikPixel(int H, int S, int V, int R, int G, int B)`
-**Purpose:** Master classifier for colored (non-white) cube stickers.
-
-**Returns:** True if pixel is a colored sticker (not background, not skin, not white).
-
-**Logic:**
-1. Exclude skin FIRST
-2. Then check 5 colored stickers (Yellow, Orange, Red, Green, Blue)
-
-**Used by:** `buildColoredRubikMask()` for initial segmentation.
-
----
-
-### Image Processing Functions
-
-#### `void splitHSVChannels(Mat_<Vec3b> hsv, Mat_<uchar>& H, Mat_<uchar>& S, Mat_<uchar>& V)`
-**Purpose:** Separate an HSV image into individual H, S, V channels.
-
-**Parameters:**
-- `hsv`: 3-channel HSV image (each pixel has [H, S, V])
-- `H`, `S`, `V`: Output single-channel matrices (by reference)
-
-**Implementation:** Loop through every pixel, extract [0], [1], [2] components.
-
-**Used by:** `buildColoredRubikMask()` to work with separate channels.
-
----
-
-#### `Mat_<uchar> buildColoredRubikMask(Mat_<Vec3b> img, Mat_<uchar>& H, Mat_<uchar>& S, Mat_<uchar>& V)`
-**Purpose:** Create binary mask of colored cube stickers (output of color segmentation).
-
-**Parameters:**
-- `img`: Input BGR image
-- `H`, `S`, `V`: Output HSV channels (populated here)
-
-**Returns:** Binary mask (0=sticker pixel, 255=background)
-
-**Algorithm:**
-1. Convert BGR→HSV
-2. Split into H, S, V channels
-3. Initialize mask to all 255 (background)
-4. For each pixel: if `isColoredRubikPixel()` → set mask to 0
-5. Count and print object pixel count
-
-**Output:** Noisy, has gaps between stickers (separator lines not filled yet).
-
----
-
-#### `Mat_<uchar> buildWhiteRubikMask(Mat_<Vec3b> img, Mat_<uchar> H, Mat_<uchar> S, Mat_<uchar> V)`
-**Purpose:** Create binary mask of white cube stickers only.
-
-**Parameters:** Same as colored mask
-
-**Returns:** Binary mask (0=white sticker, 255=background)
-
-**Logic:** Same as colored but uses only `isWhiteRubikPixel()` check.
-
-**Used by:** Fallback detection if colored detection fails.
-
----
-
-#### `Mat_<uchar> openingOp(Mat_<uchar> src, Mat_<uchar> strel)`
-**Purpose:** Remove noise from binary mask (Erode → Dilate).
-
-**Parameters:**
-- `src`: Input binary mask
-- `strel`: Structuring element (usually 3×3)
-
-**Returns:** Cleaned mask
-
-**Effect:** Isolated noise pixels (1-2 pixels) disappear.
-
-**Typical Use:** Remove hand pixels and noise before closing.
-
----
-
-#### `Mat_<uchar> closingOp(Mat_<uchar> src, Mat_<uchar> strel)`
-**Purpose:** Fill gaps (Dilate → Erode).
-
-**Parameters:**
-- `src`: Input binary mask
-- `strel`: Structuring element (usually 5×5)
-
-**Returns:** Filled mask
-
-**Effect:** Black separator lines (2–4 pixels) between stickers become white, uniting 9 stickers into one blob.
-
-**Typical Use:** Unite stickers after opening.
-
----
-
-#### `Mat_<uchar> squareStrel3()` and `Mat_<uchar> squareStrel5()`
-**Purpose:** Create square structuring elements for morphological operations.
-
-**Returns:** 3×3 or 5×5 matrix (all values = 0, representing the kernel shape).
-
-**Note:** OpenCV erosion/dilation interpret 0 as "include in operation", so a zeroed matrix = full square.
-
----
-
-#### `Mat_<Vec3b> resizeProjectImageIfNeeded(Mat_<Vec3b> img)`
-**Purpose:** Downscale large images for faster processing.
-
-**Parameters:** Input image
-
-**Returns:** Resized image (max dimension = 900px)
-
-**Algorithm:**
-1. If max(width, height) ≤ 900: return unchanged
-2. Else: scale = 900 / max(width, height)
-3. Resize using INTER_AREA (averages pixels, better for downscaling)
-
-**Benefit:** Handles high-resolution images without slowdown; INTER_AREA preserves color uniformity.
-
----
-
-### Component Analysis Functions
-
-#### `vector<ComponentInfo> extractComponentsFromLabels(Mat_<int> labels, Mat_<uchar> H, Mat_<uchar> S, Mat_<uchar> V, Mat_<Vec3b> img)`
-**Purpose:** Extract geometry and color statistics for each labeled blob.
-
-**Parameters:**
-- `labels`: BFS output (each pixel has blob ID 0..N)
-- `H`, `S`, `V`: HSV channels
-- `img`: Original BGR image
-
-**Returns:** Vector of `ComponentInfo` structs (one per blob)
-
-**Algorithm (Single O(N) Pass):**
-1. Find max label to know blob count
-2. For each blob (1..maxLabel):
-   - Sum area, coordinates, HSV, RGB values
-   - Track min/max X,Y for bounding box
-3. For each non-background pixel:
-   - Check if border (has neighbor with different label)
-   - Count perimeter pixels
-4. For each blob, compute:
-   - **area**: pixel count
-   - **center**: (sumX/area, sumY/area)
-   - **bbox**: rectangle from min/max coords
-   - **aspect**: width/height
-   - **bboxDensity**: area / (bbox width × height)
-   - **thinness**: 4π·area / perimeter² (circularity metric)
-   - **meanH, meanS, meanV, meanR, meanG, meanB**: Average color
-   - **colorName**: Call `classifyRubikColor()` on mean HSV/RGB
-
-**Outputs:** All metrics needed for face detection and scoring.
-
----
-
-#### `bool isPossibleCubeFace(ComponentInfo c, Size imgSize, bool whiteMode)`
-**Purpose:** Filter out impossible blob candidates (too small/large, wrong aspect, etc.).
-
-**Parameters:**
-- `c`: Candidate blob
-- `imgSize`: Image dimensions
-- `whiteMode`: If true, check for WHITE; if false, check for colored
-
-**Returns:** True if blob passes all geometric constraints.
-
-**Filters:**
-- **Area**: 0.8%–40% of image (depends on distance/scale)
-- **Min width/height**: ≥12% of image dimension (resolution requirement)
-- **Aspect ratio**: 0.5–2.4 (accounts for perspective, cube not stretched)
-- **Density**: ≥0.16 (after morphology, stickers compact in bbox)
-- **Color**:
-  - If `whiteMode=false`: Must be colored (not WHITE or UNKNOWN)
-  - If `whiteMode=true`: Must be WHITE
-
-**Typical result:** From 10–50 blobs, 1–3 pass filters.
-
----
-
-#### `ComponentInfo findBestComponentFace(vector<ComponentInfo> components, Size imgSize, bool whiteMode)`
-**Purpose:** Score all candidate blobs and return the best one.
-
-**Parameters:**
-- `components`: Vector of candidates (pre-filtered)
-- `imgSize`: Image dimensions
-- `whiteMode`: Detection mode (colored or white)
-
-**Returns:** Best blob (or empty blob if none found).
-
-**Scoring Formula:**
+## Complete Pipeline
+
+The current processing pipeline is:
+
+```text
+BGR image
+   |
+   v
+Resize image if needed
+   |
+   v
+Convert BGR -> HSV with convertRGBtoHSV
+   |
+   v
+Build colored Rubik mask
+   |
+   v
+Opening 3x3 + closing 5x5
+   |
+   v
+BFS connected components
+   |
+   v
+Extract component properties
+   |
+   v
+Choose the best colored face candidate
+   |
+   +-- if no colored face is found:
+   |       use Canny-based white face detection
+   |
+   v
+Rubik face ROI
+   |
+   v
+Warp ROI to 300x300
+   |
+   v
+HSV + adaptive edge detection inside ROI
+   |
+   v
+Sticker contours inside ROI
+   |
+   v
+Fallback to 3x3 split if not all stickers are found
+   |
+   v
+Classify color from the center of each cell
+   |
+   v
+Draw face + 9 sticker cells + print matrix
 ```
+
+The order is important. Sticker detection depends on the ROI. It is not a global search over the image.
+
+---
+
+## HSV and Color Explanation
+
+The original image is BGR because OpenCV stores color images as BGR by default. For classification, the project uses HSV because it separates:
+
+- hue, which represents the color type;
+- saturation, which represents color intensity/purity;
+- value, which represents brightness.
+
+The conversion function used by the project is:
+
+```cpp
+Mat_<Vec3b> convertRGBtoHSV(Mat_<Vec3b> img)
+```
+
+This is a custom conversion, not OpenCV's `cvtColor`. The resulting channels are:
+
+- `H` in the range 0..255;
+- `S` in the range 0..255;
+- `V` in the range 0..255.
+
+In the usual HSV model, hue is an angle from 0 to 360 degrees. In this project it is normalized:
+
+```text
+H_normalized = H_degrees * 255 / 360
+```
+
+Approximate ranges:
+
+```text
+red       H close to 0 or close to 255
+orange    H roughly in 7..45
+yellow    H roughly in 28..82
+green     H roughly in 65..155
+blue      H roughly in 110..235
+white     low S, high V
+```
+
+For white, hue is not very useful. White is mainly described by low saturation and high brightness.
+
+---
+
+## Rubik Face Detection
+
+Face detection starts from colored Rubik pixels, not from the sticker grid.
+
+The function:
+
+```cpp
+Mat_<uchar> buildColoredRubikMask(Mat_<Vec3b> img, Mat_<uchar>& H, Mat_<uchar>& S, Mat_<uchar>& V)
+```
+
+does the following:
+
+1. converts the BGR image to HSV;
+2. splits the HSV image into `H`, `S`, and `V`;
+3. visits every pixel;
+4. checks if the pixel matches one of the colored Rubik stickers;
+5. excludes skin-colored pixels;
+6. builds a binary mask.
+
+The mask convention is:
+
+```text
+0   = object pixel, meaning colored Rubik pixel
+255 = background
+```
+
+After building the mask, the code applies:
+
+```cpp
+openingOp(coloredMask, strel3)
+closingOp(cleanColoredMask, strel5)
+```
+
+Their roles are:
+
+- opening 3x3 removes small noise;
+- closing 5x5 connects nearby areas and reduces gaps between stickers.
+
+Then connected components are computed with BFS:
+
+```cpp
+bfs_connected_components(cleanColoredMask, coloredLabels, true)
+```
+
+For every connected component, the code computes:
+
+- area;
+- center;
+- bounding box;
+- aspect ratio;
+- density inside the bounding box;
+- mean HSV values;
+- mean RGB values;
+- estimated color name.
+
+The relevant functions are:
+
+```cpp
+extractComponentsFromLabels(...)
+isPossibleCubeFace(...)
+findBestComponentFace(...)
+```
+
+A component can be a possible Rubik face if:
+
+- it is not too small;
+- it is not too large;
+- its width and height are large enough;
+- its aspect ratio is acceptable;
+- its bounding-box density is high enough;
+- its color is not white and not unknown.
+
+White is not handled through the colored component detector. It has its own Canny fallback.
+
+The best colored component is selected with:
+
+```text
 score = 20.0 * areaScore
       + 2.0 * densityScore
-      + rightBonus
       - 0.5 * aspectPenalty
-
-where:
-  areaScore = area / imageArea
-  densityScore = bboxDensity
-  rightBonus = 0.35 if center.x > centerX else 0.0
-  aspectPenalty = |aspect - 1.25|
 ```
 
-**Weights:**
-- **20.0× areaScore**: Size is dominant (large blobs are more likely real faces)
-- **2.0× densityScore**: Compactness matters (real faces are dense in bbox)
-- **rightBonus = 0.35**: Hand+cube typically on right side of frame
-- **-0.5× aspectPenalty**: Prefer square-ish (1.25 allows slight non-squareness)
+Where:
 
-**Result:** Blob with highest score is selected as the detected face.
+- `areaScore` favors larger components;
+- `densityScore` favors compact components;
+- `aspectPenalty` penalizes shapes that are too far from a square/rectangle face.
 
 ---
 
-#### `string dominantColorInsideBox(Mat_<Vec3b> img, Mat_<uchar> H, Mat_<uchar> S, Mat_<uchar> V, Rect box)`
-**Purpose:** Re-classify pixels inside detected face bbox and take majority vote for final color.
+## White Face Detection
 
-**Parameters:**
-- `img`: Original BGR image
-- `H`, `S`, `V`: HSV channels
-- `box`: Bounding box of detected face
+The white face is treated separately because it is not strongly saturated. White stickers usually have:
 
-**Returns:** Color name (WHITE, YELLOW, ORANGE, RED, GREEN, BLUE, or UNKNOWN)
+- low saturation;
+- high value/brightness;
+- visible black grid lines between stickers.
 
-**Algorithm:**
-1. Shrink box by 1/8 margin on all sides (exclude edge artifacts)
-2. For each pixel in shrunken region:
-   - Call `classifyRubikColor()` to get pixel color
-   - Increment vote counter for that color
-3. Return color with max votes
+If no colored face is found, the code calls:
 
-**Benefit:** Handles boundary pixels that mix with neighboring stickers.
-**Result:** More accurate than mean-based classification.
-
----
-
-### Edge Detection Functions (White Face)
-
-#### `float cannyGridScore(Mat_<uchar> edges, Rect box)`
-**Purpose:** Score how well a box region has detected grid lines (for Canny-based white detection).
-
-**Parameters:**
-- `edges`: Canny edge map (binary, non-zero = edge)
-- `box`: Candidate region
-
-**Returns:** Fraction of expected grid line pixels that are edges (0.0–1.0)
-
-**Algorithm:**
-1. Scan vertical lines at 1/3 and 2/3 of box width
-2. Scan horizontal lines at 1/3 and 2/3 of box height
-3. Count edge pixels within ±band pixels of these lines
-4. Return edgeCount / totalCount
-
-**Rationale:** A 3×3 Rubik grid has dividing lines exactly at 1/3 and 2/3. If Canny edges align here, it's likely a white face.
-
----
-
-#### `float outerEdgeScore(Mat_<uchar> edges, Rect box)`
-**Purpose:** Score how well the box perimeter is defined by edges.
-
-**Parameters:** Same as cannyGridScore
-
-**Returns:** Fraction of perimeter pixels that are edges
-
-**Algorithm:**
-1. Scan along box top/bottom edges
-2. Scan along box left/right edges
-3. Count edge pixels ±band pixels from borders
-4. Return edgeCount / totalCount
-
-**Rationale:** Cube has clear boundary vs background; strong perimeter edges are expected.
-
----
-
-#### `float whiteDensityInRectForCanny(Mat_<Vec3b> img, Mat_<uchar> H, Mat_<uchar> S, Mat_<uchar> V, Rect r)`
-**Purpose:** Compute fraction of white sticker pixels in a region.
-
-**Parameters:** Image and HSV channels + region
-
-**Returns:** whitePixels / totalPixels (0.0–1.0)
-
-**Algorithm:** Count pixels matching `isWhiteRubikPixel()` in region.
-
-**Used by:** `findWhiteFaceWithCanny()` to filter candidates (must be ≥15% white).
-
----
-
-#### `ComponentInfo findWhiteFaceWithCanny(Mat_<Vec3b> img, Mat_<uchar> H, Mat_<uchar> S, Mat_<uchar> V, bool showCanny = true)`
-**Purpose:** Detect white cube faces when colored detection fails (via Canny edge detection on V channel).
-
-**Parameters:**
-- Image and HSV channels
-- `showCanny`: Display intermediate Canny result (debug flag)
-
-**Returns:** Detected white face or empty ComponentInfo
-
-**Algorithm:**
-1. Blur V channel (5×5 Gaussian)
-2. Apply Canny (low=35, high=110)
-3. Sliding window search (sizes: 120–55% of image, step=12):
-   - For each candidate region:
-     - Check: S<105, V>90, white density>15%
-     - Compute gridScore (internal lines) and borderScore (perimeter)
-     - If scores too low: skip
-     - Compute composite score (weighted sum of 7 metrics)
-     - Track best box
-4. Return best box as detected white face
-
-**Scoring (7 factors):**
-```
-score = 5000×whiteDensity
-      + 45000×gridScore        (heavily weighted)
-      + 18000×borderScore
-      + 3000×lowSScore         (low saturation bonus)
-      + 2500×sizeScore
-      + 1500×rightBonus
-      + 1000×yBonus            (prefers center-ish Y)
+```cpp
+ComponentInfo findWhiteFaceWithCanny(Mat_<Vec3b> img, Mat_<uchar> H, Mat_<uchar> S, Mat_<uchar> V, bool showCanny)
 ```
 
-**Note:** White detection is a fallback for when colored detection fails.
+Main steps:
 
----
+1. blur the `V` channel;
+2. apply Canny on `V`;
+3. scan square candidate windows;
+4. for each candidate window, check:
+   - average saturation is low enough;
+   - average brightness is high enough;
+   - white pixel density is high enough;
+   - expected inner grid lines have enough edges;
+   - outer borders have enough edges.
 
-### Visualization Functions
+For a white face, the `V` channel is useful because black separators contrast strongly with bright white stickers.
 
-#### `Mat_<Vec3b> drawFaceAndSimpleGrid(Mat_<Vec3b> img, ComponentInfo face)`
-**Purpose:** Draw detection results on image (for output).
+Helper functions:
 
-**Parameters:**
-- `img`: Input image
-- `face`: Detected face blob
-
-**Returns:** Annotated image
-
-**Draws:**
-1. **Red bounding box** around face bbox (3px thick)
-2. **Blue grid lines** dividing bbox into 3×3
-3. **Text label**: "FACE [COLOR] A=[area]" above bbox
-
-**If no face found:** Displays "No face candidate found" in red text.
-
----
-
-#### `void printComponents(string title, vector<ComponentInfo> components)`
-**Purpose:** Print debug info for all candidate blobs.
-
-**Parameters:**
-- `title`: Label for output
-- `components`: List of candidates
-
-**Output:** For each blob (up to 20):
-```
-1 label=1 area=4523 center=(234,156) bbox=120x145 aspect=0.83 
-  density=0.28 HSV=(45,180,200) RGB=(200,180,50) color=YELLOW
+```cpp
+averageValueInRect(...)
+whiteDensityInRectForCanny(...)
+cannyGridScore(...)
+outerEdgeScore(...)
 ```
 
----
+`cannyGridScore` checks for edges near the expected 1/3 and 2/3 grid lines.
 
-#### `void printFace(ComponentInfo face)`
-**Purpose:** Print details of detected face.
-
-**Output:** Single blob's full statistics, or "No face found."
+`outerEdgeScore` checks whether the outside border of the face is visible.
 
 ---
 
-### Main Processing Function
+## Sticker Extraction Inside the ROI
 
-#### `Mat_<Vec3b> processRubikFrame(Mat_<Vec3b> inputImg, bool showDebugWindows, bool printInfo)`
-**Purpose:** Complete pipeline: input image → detected face with grid overlay.
+After the face is found, the detected component is converted into a simple face structure:
 
-**Parameters:**
-- `inputImg`: Raw BGR image
-- `showDebugWindows`: Display H, S, V channels, masks, components (debug)
-- `printInfo`: Print statistics (debug)
-
-**Returns:** Annotated result image
-
-**Steps:**
-1. Resize if needed
-2. Build colored mask
-3. Morphology (opening 3×3 + closing 5×5)
-4. BFS connected components
-5. Extract features for each blob
-6. Find best colored face
-7. If no colored face: Try Canny for white
-8. Re-vote color by majority
-9. Draw grid overlay
-10. Optionally show debug windows and print stats
-
-**Output Windows (if showDebugWindows=true):**
-- "1 Original resized"
-- "2 H channel", "3 S channel", "4 V channel"
-- "5 Colored mask", "6 Clean colored mask"
-- "7 Colored connected components"
-- "White Canny on V channel" (if white face detected)
-
----
-
-### Camera & File I/O
-
-#### `bool tryOpenCamera(VideoCapture& cap)`
-**Purpose:** Attempt to open a working camera from available indices and backends.
-
-**Parameters:** VideoCapture object (modified)
-
-**Returns:** True if camera successfully opened
-
-**Strategy:**
-- Tries indices 0–3
-- Tries backends: CAP_AVFOUNDATION (macOS), CAP_ANY
-- Warm-up: Read 30 frames waiting for valid data
-- Sets resolution 640×480, 30 FPS
-
-**Output:** Prints each attempt and result.
-
----
-
-#### `bool readValidFrame(VideoCapture& cap, Mat& frame)`
-**Purpose:** Read a frame from camera, retry up to 10 times if empty.
-
-**Parameters:** Camera and output frame
-
-**Returns:** True if valid frame obtained
-
-**Benefit:** Handles temporary camera glitches.
-
----
-
-#### `void project()`
-**Purpose:** Main project menu (static image or live camera mode).
-
-**Menu:**
+```cpp
+struct RubikFace {
+    vector<Point2f> corners;
+    Rect bbox;
+    bool valid = false;
+};
 ```
+
+The function:
+
+```cpp
+RubikFace faceFromComponent(ComponentInfo component, Size imageSize)
+```
+
+builds the four face corners from the detected bounding box.
+
+Then:
+
+```cpp
+extractRubikStickers(...)
+```
+
+does the sticker processing:
+
+1. creates a destination square of 300x300;
+2. computes the perspective transform with `getPerspectiveTransform`;
+3. applies `warpPerspective`;
+4. computes HSV inside the warped ROI;
+5. builds adaptive edges inside the ROI;
+6. searches for sticker contours only inside the ROI;
+7. fills the 9 final cells;
+8. classifies each cell;
+9. maps stickers back to the original image.
+
+The 300x300 size is chosen because it makes the grid simple:
+
+```text
+300 / 3 = 100
+```
+
+So each ideal cell is 100x100 pixels.
+
+For each cell:
+
+```text
+row = 0..2
+col = 0..2
+cellBox = Rect(col * 100, row * 100, 100, 100)
+```
+
+Important details:
+
+- the grid never leaves the ROI;
+- sticker contours are searched inside the ROI, not in the full image;
+- if good contours are not found for all 9 cells, the code falls back to splitting the warped ROI into a 3x3 grid;
+- the fallback still stays inside the face ROI, so it does not include hand or background.
+
+---
+
+## Adaptive Edge Detection Inside the ROI
+
+Inside the ROI, the code uses:
+
+```cpp
+buildAdaptiveRubikEdges(...)
+```
+
+This function receives the `S` and `V` channels and produces:
+
+- `edgeMap`;
+- `closedMap`.
+
+For low-saturation faces, usually white faces:
+
+```text
+use the V channel
+```
+
+For colored faces:
+
+```text
+combine S + V + grayscale
+```
+
+Reasoning:
+
+- on white faces, the useful contrast is brightness contrast between white stickers and black grid lines;
+- on colored faces, saturation and brightness help separate stickers;
+- grayscale can help capture black separator edges.
+
+After Canny, the code applies:
+
+```cpp
+dilate(...)
+morphologyEx(..., MORPH_CLOSE, ...)
+```
+
+These operations connect broken edges and make sticker contours more stable.
+
+---
+
+## Sticker Color Classification
+
+Sticker classification does not use the full cell. It uses only the central area:
+
+```cpp
+Rect sample(
+    cellBox.x + cellBox.width * 0.27,
+    cellBox.y + cellBox.height * 0.27,
+    cellBox.width * 0.46,
+    cellBox.height * 0.46
+);
+```
+
+This means roughly the center of the cell is sampled, while avoiding:
+
+- sticker borders;
+- black grid lines;
+- mixed pixels near neighboring stickers;
+- strong edge pixels;
+- small reflections near borders;
+- logo pixels if they do not dominate the center.
+
+The main functions are:
+
+```cpp
+classifyStickerPixel(...)
+classifyStickerCentralRegion(...)
+```
+
+For each pixel in the central region:
+
+1. ignore pixels that are on detected edges;
+2. ignore pixels that are too dark;
+3. ignore very bright, low-saturation pixels that are likely highlights;
+4. vote for the pixel color;
+5. store H, S, V values for median calculation;
+6. choose the dominant color.
+
+White is accepted only if:
+
+- enough pixels vote for white;
+- median saturation is low;
+- median value is high.
+
+This prevents a small reflection or logo from turning a sticker into white.
+
+For red and orange, RGB dominance is also checked:
+
+- red requires strong `R` dominance;
+- orange requires dominant `R`, but with enough `G`;
+- orange is separated from yellow using the `G/R` ratio;
+- red is separated from orange by stronger red dominance.
+
+---
+
+## Debug Windows
+
+When `showDebugWindows` is `true`, the application opens useful debug windows.
+
+Main windows:
+
+```text
+1 Original resized
+2 H channel
+3 S channel
+4 V channel
+5 Colored mask
+6 Clean colored mask
+7 Colored connected components
+8 ROI warped face
+9 ROI adaptive edges
+10 ROI closed edges
+11 ROI sticker candidates
+12 Final Rubik grid
+White Canny on V channel
+```
+
+Some windows appear only in certain cases:
+
+- `White Canny on V channel` appears when the white-face fallback is used;
+- colored mask windows appear when colored face detection is used;
+- ROI windows appear only if a face is found.
+
+How to read them:
+
+- `H channel`: hue distribution;
+- `S channel`: color saturation;
+- `V channel`: brightness;
+- `Colored mask`: pixels considered colored Rubik stickers;
+- `Clean colored mask`: mask after morphological cleanup;
+- `ROI warped face`: the detected face warped to 300x300;
+- `ROI adaptive edges`: edges detected inside the ROI;
+- `ROI closed edges`: edges after dilation and closing;
+- `ROI sticker candidates`: detected sticker-like contours inside the ROI;
+- `Final Rubik grid`: final output with face outline and 9 cells.
+
+---
+
+## Important Functions
+
+### `processRubikFrame`
+
+```cpp
+Mat_<Vec3b> processRubikFrame(Mat_<Vec3b> inputImg, bool showDebugWindows, bool printInfo)
+```
+
+This is the main function of the Rubik project.
+
+It:
+
+- receives the input image;
+- detects the face ROI;
+- extracts stickers inside the ROI;
+- classifies sticker colors;
+- draws the final result;
+- shows debug windows if requested.
+
+This function is used both by static image mode and live camera mode.
+
+### `detectRubikFaceROI`
+
+```cpp
+ComponentInfo detectRubikFaceROI(...)
+```
+
+Detects the Rubik face using:
+
+- color mask;
+- morphology;
+- BFS connected components;
+- geometric scoring;
+- Canny fallback for white faces.
+
+### `extractRubikStickers`
+
+```cpp
+vector<StickerInfo> extractRubikStickers(...)
+```
+
+Receives an already detected face and works only inside that face area.
+
+It returns the final stickers used for drawing and for the color matrix.
+
+### `classifyStickerCentralRegion`
+
+```cpp
+string classifyStickerCentralRegion(...)
+```
+
+Classifies one sticker using the center of its cell.
+
+This is one of the most important functions for stable color detection.
+
+### `drawFaceAndStickerGrid`
+
+```cpp
+Mat_<Vec3b> drawFaceAndStickerGrid(...)
+```
+
+Draws:
+
+- the detected face outline;
+- the 9 sticker cells;
+- row/column/color labels;
+- the 3x3 matrix in the console if `printMatrix` is `true`.
+
+### `tryOpenCamera`
+
+```cpp
+bool tryOpenCamera(VideoCapture& cap)
+```
+
+Tries multiple camera indices and backends until a valid frame is received.
+
+### `project`
+
+```cpp
+void project()
+```
+
+Contains the project menu:
+
+```text
 1 - Run on images from Project/ folder
 2 - Open camera and detect live
 0 - Exit project
 ```
 
-**Option 1 (Batch Images):**
-- Loads 6 test images
-- Processes each with `showDebugWindows=true, printInfo=true`
-- Displays result after each (press any key to continue)
-
-**Option 2 (Live Camera):**
-- Opens camera with auto-detection
-- Continuous loop: read frame → detect → display
-- Press ESC or 'q' to exit
+The menu behavior has not been changed.
 
 ---
 
-## 🔬 Technical Details
+## Limitations
 
-### Color Space: HSV vs RGB
+The algorithm is designed for reasonably clear images where the front face is visible.
 
-**Why HSV?**
-- **Hue (H):** Position on color wheel (0°–360°) → **invariant to lighting**
-- **Saturation (S):** Color purity (0=gray, 100=pure) → **separates skin from stickers**
-- **Value (V):** Brightness (0=black, 100=white) → **useful for edge detection**
+Problems can appear when:
 
-**Normalization:** H_normalized = H_degrees × 255/360
+- the cube is very far from the camera;
+- the hand covers too much of the front face;
+- the image is very dark;
+- reflections are very strong;
+- the cube is rotated so much that the front face becomes very narrow;
+- the background has colors similar to the stickers;
+- the camera changes white balance strongly;
+- a side face becomes larger or more visible than the intended front face.
 
-Example ranges:
-- Red: 0°, H_norm ≈ 0
-- Orange: 25°, H_norm ≈ 18
-- Yellow: 55°, H_norm ≈ 39
-- Green: 120°, H_norm ≈ 85
-- Blue: 220°, H_norm ≈ 156
-
-### Morphological Operations
-
-**Opening (Erode→Dilate, 3×3):**
-- Removes isolated noise pixels
-- Preserves large objects
-- Useful before BFS
-
-**Closing (Dilate→Erode, 5×5):**
-- Fills small gaps (separator lines)
-- Bridges 2–4 pixel gaps
-- Unites 9 stickers into single blob
-
-**Why different kernels?**
-- 3×3: Erosion needs small kernel to be selective
-- 5×5: Dilation must bridge typical line width (2–4px)
-
-### Connected Components with BFS
-
-**8-Connectivity:** Neighbors include diagonals (8 directions)
-- Handles rotated/perspective stickers
-- Avoids fragmentation
-
-**Blob Properties Computed:**
-- **Area:** Pixel count
-- **Center of mass:** (ΣX/area, ΣY/area)
-- **Bounding box:** min/max X,Y
-- **Aspect ratio:** width/height (shape indicator)
-- **Density:** area/(bbox_area) (compactness: 0–1)
-- **Thinness:** 4π·area/perim² (circularity: 1=circle, <0.5=elongated)
-- **Perimeter:** Border pixel count
-
-### Canny Edge Detection
-
-**5-Step Algorithm:**
-1. **Gaussian Blur (5×5, σ=1.0):** Reduce noise
-2. **Sobel Gradients:** Compute dI/dx (X-edges) and dI/dy (Y-edges)
-3. **Magnitude & Direction:** M=√(Gx²+Gy²), θ=atan2(Gy,Gx)
-4. **Non-Maximum Suppression:** Thin edges to 1-pixel width
-5. **Hysteresis Thresholding:** High threshold=strong edges, low threshold=weak edges, link weak to strong
-
-**Thresholds:** low=35, high=110
-- 35: Weak edges from texture/shadows
-- 110: Strong edges from black grid lines on white
-
-### Color Classification Order
-
-**Critical:** Order prevents misclassification
-
-1. **White:** Most specific (low S, high V) → checked first
-2. **Yellow:** G/R ∈ [0.70, 1.20] (unique ratio)
-3. **Orange:** G/R ∈ [0.43, 0.93] (before Red to capture intermediate)
-4. **Red:** G/R ≤ 0.62 (most restrictive G/R)
-5. **Green:** G-dominant, far from others
-6. **Blue:** B-dominant, far from others
-
-**Why this order prevents errors:**
-- If Orange before Yellow: high-sat yellow (G/R>0.43) misclassified
-- If Red before Orange: orange (R>G by small margin) absorbed into red
+The ROI-first pipeline reduces the risk of mixing the front face with side faces or background, but it still depends on the face ROI being detected correctly.
 
 ---
 
-## 🐛 Troubleshooting
+## How to Test
 
-### Camera Not Opening
-```
-ERROR: Could not open a working camera
-FIX:   - Check macOS privacy settings (Settings > Security & Privacy > Camera)
-       - Grant camera permission to Terminal/CLion
-       - Try different camera index (function tries 0–3)
-       - Use USB camera instead of built-in (if available)
-```
+### Build test
 
-### No Face Detected
-```
-CAUSE: Insufficient color saturation, poor lighting, hand occludes cube
-FIX:   - Increase lighting (bright room / lamp)
-       - Hold cube closer to camera (fill ~15–40% of frame)
-       - Expose fully colored face (avoid extreme angles)
-       - Check HSV channel output to verify color separation
+From the project root:
+
+```bash
+cmake --build build
 ```
 
-### Wrong Color Detected
-```
-CAUSE: Color threshold overlap, similar hues in lighting
-FIX:   - Adjust thresholds in isXRubikPixel() functions
-       - Fine-tune G/R, B/R ratios
-       - Adjust saturation bounds
-       - Test on multiple images to validate
+If there is no `build` folder:
+
+```bash
+mkdir -p build
+cd build
+cmake ..
+cmake --build .
 ```
 
-### Slow Processing
-```
-CAUSE: Large image (>900px)
-FIX:   - Function auto-resizes; check output message
-       - Or pre-resize input image offline
+### Static image test
+
+Run:
+
+```bash
+./build/Lab1
 ```
 
-### Build Fails
+Choose:
+
+```text
+15
 ```
-ERROR: OpenCV not found
-FIX:   - Verify OpenCV installed: pkg-config --modversion opencv
-       - Update CMakeLists.txt paths if OpenCV in non-standard location
-       - macOS: brew install opencv; brew link opencv
+
+Then choose:
+
+```text
+1
+```
+
+The program runs on:
+
+```text
+Project/portocaliu.bmp
+Project/rosu.bmp
+Project/galben.bmp
+Project/verde.bmp
+Project/albastru.bmp
+Project/alb.bmp
+```
+
+For each image:
+
+- debug windows are opened;
+- the final result is displayed;
+- the detected face component is printed;
+- the 3x3 color matrix is printed.
+
+Press any key in the OpenCV window to move to the next image.
+
+### Live camera test
+
+Run:
+
+```bash
+./build/Lab1
+```
+
+Choose:
+
+```text
+15
+```
+
+Then choose:
+
+```text
+2
+```
+
+To exit live mode, press:
+
+```text
+q
+```
+
+or:
+
+```text
+Esc
 ```
 
 ---
 
-## 📊 Performance Metrics
+## Common Problems and Fixes
 
-**Typical Processing Time (640×480 image):**
-- Color segmentation: ~30ms
-- Morphological ops: ~20ms
-- BFS: ~10ms
-- Feature extraction: ~15ms
-- Face scoring: ~5ms
-- Total pipeline: **~80–100ms**
+### OpenCV is not found during build
 
-**Memory Usage:**
-- Original image: 640×480×3 bytes ≈ 1MB
-- HSV channels: 3× uint8 ≈ 1MB
-- Labels: uint32 ≈ 1.2MB
-- Total: ~3–4MB
+Symptom:
+
+```text
+Could not find OpenCV
+```
+
+Possible fixes:
+
+- check that OpenCV is installed;
+- check `OpenCV_DIR` in `CMakeLists.txt`;
+- on macOS, check whether `/opt/homebrew/opt/opencv/lib/cmake/opencv4` exists;
+- rerun `cmake ..` inside the `build` directory.
+
+### Camera does not open
+
+Possible fixes:
+
+- check camera permissions in the operating system;
+- on macOS, allow camera access for Terminal or CLion;
+- close other applications that may be using the camera;
+- try an external camera;
+- run static image mode first to verify that the algorithm itself works.
+
+### No face is detected
+
+Possible causes:
+
+- lighting is too weak;
+- the cube is too small in the image;
+- the hand covers too much of the cube;
+- the face is too tilted;
+- colors are washed out by light;
+- the background has similar colors.
+
+Things to try:
+
+- move the cube closer to the camera;
+- rotate the cube so the front face is clearer;
+- use more even lighting;
+- inspect the `H`, `S`, and `V` windows;
+- inspect `Colored mask` and `Clean colored mask`.
+
+### White is confused with reflections
+
+The algorithm tries to avoid this by using:
+
+- low saturation requirement;
+- high value requirement;
+- majority voting;
+- central-cell classification;
+- ignoring very bright, low-saturation highlight-like pixels.
+
+If the issue remains:
+
+- change the angle relative to the light;
+- avoid direct light on the sticker;
+- inspect `ROI warped face`.
+
+### Red and orange are confused
+
+Red and orange are close in HSV, so RGB rules are also used.
+
+Red must have strong `R` dominance.
+
+Orange must have dominant `R`, but also enough `G`.
+
+If confusion still happens:
+
+- check the lighting;
+- check that the ROI contains only the front face;
+- check that the side face is not included in the ROI;
+- adjust thresholds in `isOrangeRubikPixel`, `isRedRubikPixel`, or `classifyStickerPixel`.
+
+### The grid looks shifted
+
+The final grid is built in the warped 300x300 ROI and then mapped back to the original image.
+
+If the grid looks shifted:
+
+- first check the red outline of the detected face;
+- if the face outline is wrong, the issue is face detection;
+- if the face outline is good, inspect `ROI warped face`;
+- if the warped face is good, inspect `ROI sticker candidates`.
 
 ---
 
-## 📝 Example Usage
+## Code Style Notes
 
-### Static Image:
+The code is written as a laboratory project, not as a general-purpose library.
+
+The project intentionally keeps:
+
+- simple functions;
+- small structs;
+- explicit logic;
+- visible thresholds;
+- easy-to-follow debug windows;
+- integration with the existing laboratory menu.
+
+The code does not use large classes, templates, or complex abstractions because the main goal is to make the image processing steps understandable.
+
+---
+
+## Summary
+
+Peek-a-Cube detects the main face of a Rubik's cube using color segmentation, morphology, and connected components. For the white face, it uses Canny on the brightness channel. After the face is detected, the algorithm crops and warps only that region, then detects and classifies stickers only inside that ROI.
+
+This approach is more stable than a global 3x3 grid search because it reduces the risk of including the hand, background, or a side face of the cube.
+
+The main function remains:
+
 ```cpp
-Mat_<Vec3b> img = imread("Project/portocaliu.bmp");
-Mat_<Vec3b> result = processRubikFrame(img, true, true);
-imshow("Result", result);
-waitKey(0);
+processRubikFrame(...)
 ```
 
-### Live Camera:
-```cpp
-VideoCapture cap(0);
-while (true) {
-    Mat frame;
-    cap >> frame;
-    Mat_<Vec3b> result = processRubikFrame(frame, false, false);
-    imshow("Live", result);
-    if (waitKey(1) == 'q') break;
-}
+For static testing:
+
+```text
+15 - Project
+1 - Run on images from Project/ folder
 ```
 
----
+For live camera testing:
 
-## 🎓 Educational Value
-
-This project demonstrates:
-- **Image Processing:** Resizing, filtering, channel manipulation
-- **Color Space Conversion:** Manual HSV calculation
-- **Segmentation:** Threshold-based binary masking
-- **Morphology:** Erosion, dilation, opening, closing
-- **Connected Components:** BFS labeling, feature extraction
-- **Machine Learning Concepts:** Feature engineering, scoring, classification
-- **Edge Detection:** Canny algorithm
-- **Real-time Processing:** Video capture and live detection
-
----
-
-## 📄 License
-
-Educational project. Use and modify freely for learning purposes.
-
----
-
-## 👨‍💻 Author
-
-**Project:** Peek-a-Cube
-**Created:** 2024–2025
-**Context:** Computer Vision and Image Processing Laboratory
-
----
-
-## 🔗 Related Concepts
-
-- **Rubik's Cube Solver:** Automatic state recognition for solving algorithms
-- **Augmented Reality:** Real-time tracking of cube faces in AR applications
-- **Multi-view 3D Reconstruction:** Combining multiple face detections
-- **Color Calibration:** Handling different lighting and camera conditions
-- **Performance Optimization:** SIMD, GPU acceleration of morphology/convolution
-
----
-
-**End of README**
-
-For more details on the algorithm and visual explanations, see `Project/prezentare.html` (interactive HTML presentation with 3D animated Rubik's cube).
+```text
+15 - Project
+2 - Open camera and detect live
+```
