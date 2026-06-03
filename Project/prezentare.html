@@ -188,7 +188,7 @@ function doMove(name, dur) {
   });
 }
 
-const SOLVE = ["U","R'","F","U'","B","L'","D","R","F'","U","L","B'","D'","R'","B","D","L","F","U","R","D'","L'","B'","U'","F'"];
+const SOLVE = ["U","R'","F","U'","B","L'","D","R","F'","U","L","B'","D'","R'","B","D","L","F","U","R","D'","L'","B'","U'","F'","R","U","R'","U'","D","F"];
 
 [...SOLVE].reverse().map(inv).forEach(applySync);
 
@@ -297,6 +297,21 @@ const slides = [
   tag:'HSV Channels',
   title:'Value channel <span>visualization</span>',
   html:`<img src="./V channel.png" style="width:100%;max-width:700px;border-radius:8px;border:1px solid #30363d;margin-top:10px"/><p style="margin-top:10px;font-size:13px;color:#8b949e"><strong>V Channel:</strong> Brightness of each pixel. Black separator lines between stickers show as dark. White stickers bright. Used later for Canny edge detection.</p>`
+},
+{
+  tag:'White Face Detection',
+  title:'White Hue channel <span>analysis</span>',
+  html:`<img src="./white_H.png" style="width:100%;max-width:700px;border-radius:8px;border:1px solid #30363d;margin-top:10px"/><p style="margin-top:10px;font-size:13px;color:#8b949e"><strong>White H Channel:</strong> The white face stickers appear dark because white has very low saturation. The hue channel alone is insufficient to detect white—we need to combine with saturation and brightness information.</p>`
+},
+{
+  tag:'White Face Detection',
+  title:'White Saturation channel <span>analysis</span>',
+  html:`<img src="./white_S.png" style="width:100%;max-width:700px;border-radius:8px;border:1px solid #30363d;margin-top:10px"/><p style="margin-top:10px;font-size:13px;color:#8b949e"><strong>White S Channel:</strong> This is the key insight! White stickers show as very dark (S &lt; 90) in the saturation channel, distinguishing them from the hand (which has moderate saturation). This channel alone nearly solves white detection.</p>`
+},
+{
+  tag:'White Face Detection',
+  title:'White Value channel <span>analysis</span>',
+  html:`<img src="./white_V.png" style="width:100%;max-width:700px;border-radius:8px;border:1px solid #30363d;margin-top:10px"/><p style="margin-top:10px;font-size:13px;color:#8b949e"><strong>White V Channel:</strong> Brightness of white stickers is very high (V ≈ 240), while black separator lines are dark (V ≈ 30). This high-contrast gradient is perfect for Canny edge detection to find the 3×3 grid structure.</p>`
 },
 {
   tag:'Color Selection Logic',
@@ -571,6 +586,16 @@ direction[i][j] = atan2(Gy, Gx)  <span class="cmt">// 0°, 45°, 90°, 135°</sp
   <p style="margin-top:10px"><strong>Result:</strong> Pick box with highest score. If grid lines align with Canny edges, it's a strong match for white face.</p>`
 },
 {
+  tag:'White Face Detection',
+  title:'Canny edge result on <span>white face</span>',
+  html:`<img src="./white_Canny.png" style="width:100%;max-width:700px;border-radius:8px;border:1px solid #30363d;margin-top:10px"/><p style="margin-top:10px;font-size:13px;color:#8b949e"><strong>Canny Edges:</strong> The V channel processed through Gaussian blur and Canny edge detection clearly shows the 3×3 grid structure. Horizontal and vertical grid lines appear as thin white edges on black background. This grid signature is unmistakable for the white face.</p>`
+},
+{
+  tag:'White Face Final',
+  title:'White face detection <span>complete</span>',
+  html:`<img src="./white_final.png" style="width:100%;max-width:700px;border-radius:8px;border:1px solid #30363d;margin-top:10px"/><p style="margin-top:10px;font-size:13px;color:#8b949e"><strong>White Face Final:</strong> After Canny edge detection and sliding window scoring, the white face is localized and the 3×3 grid is extracted. The dominant color (white) is confirmed by re-voting all pixels inside the bounding box. This completes the white face detection pipeline.</p>`
+},
+{
   tag:'Complete Pipeline',
   title:'All <span>stages together</span>',
   html:`
@@ -628,6 +653,11 @@ direction[i][j] = atan2(Gy, Gx)  <span class="cmt">// 0°, 45°, 90°, 135°</sp
     <li>Rotated view (perspective distortion)</li>
     <li>Multiple faces visible (picks largest/densest)</li>
   </ul>`
+},
+{
+  tag:'Live Demo',
+  title:'Real-time camera <span>detection in action</span>',
+  html:`<video style="width:100%;max-width:700px;border-radius:8px;border:1px solid #30363d;margin-top:10px" controls><source src="./IMG_7700.mp4" type="video/mp4"></video><p style="margin-top:10px;font-size:13px;color:#8b949e"><strong>Live Camera Demo:</strong> Real-time detection on camera stream. Each frame is processed through the entire pipeline: color segmentation, morphology, connected components, and white face Canny detection. The bounding box and 3×3 grid update smoothly as the cube is rotated and presented to the camera.</p>`
 },
 {
   tag:'Final Result',
